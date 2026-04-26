@@ -1,0 +1,111 @@
+<h2>Which visual style fits your AI traffic site?</h2>
+<p class="subtitle">Choose the overall look and feel — this sets the direction for colors, typography, and layout</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="dark-tech" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#0f1117;padding:20px;font-family:'Inter',sans-serif;min-height:180px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
+        <div style="width:28px;height:28px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:6px;"></div>
+        <span style="color:#e2e8f0;font-weight:700;font-size:14px;letter-spacing:0.05em;">AI TOOLS HUB</span>
+      </div>
+      <div style="background:#1e2130;border-radius:8px;padding:12px;margin-bottom:10px;border:1px solid #2d3250;">
+        <div style="color:#a5b4fc;font-size:10px;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.1em;">FEATURED</div>
+        <div style="color:#f1f5f9;font-size:13px;font-weight:600;line-height:1.4;">DeepSeek V4 Review: Is It Really Better Than GPT-5?</div>
+        <div style="display:flex;gap:6px;margin-top:8px;">
+          <span style="background:#312e81;color:#a5b4fc;font-size:9px;padding:2px 6px;border-radius:4px;">deepseek</span>
+          <span style="background:#1e3a5f;color:#7dd3fc;font-size:9px;padding:2px 6px;border-radius:4px;">llm</span>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div style="background:#1e2130;border-radius:6px;padding:8px;border:1px solid #2d3250;">
+          <div style="color:#94a3b8;font-size:10px;margin-bottom:3px;">Claude Code Review</div>
+          <div style="color:#6366f1;font-size:9px;">ai-tools →</div>
+        </div>
+        <div style="background:#1e2130;border-radius:6px;padding:8px;border:1px solid #2d3250;">
+          <div style="color:#94a3b8;font-size:10px;margin-bottom:3px;">LangChain vs AutoGen</div>
+          <div style="color:#6366f1;font-size:9px;">ai-agents →</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Dark Tech</h3>
+      <p>Deep dark background, purple/indigo accents, high-contrast typography. Feels like a developer tool or hacker news. Appeals to technical AI audience.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="clean-editorial" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#ffffff;padding:20px;font-family:'Inter',sans-serif;min-height:180px;border-bottom:1px solid #e5e7eb;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #111827;">
+        <span style="color:#111827;font-weight:800;font-size:14px;letter-spacing:-0.03em;">AI Tools Hub</span>
+        <div style="display:flex;gap:12px;">
+          <span style="color:#6b7280;font-size:10px;">Tools</span>
+          <span style="color:#6b7280;font-size:10px;">Agents</span>
+          <span style="color:#6b7280;font-size:10px;">LLMs</span>
+        </div>
+      </div>
+      <div style="margin-bottom:12px;">
+        <span style="background:#fef3c7;color:#92400e;font-size:9px;padding:2px 8px;border-radius:2px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Analysis</span>
+        <div style="color:#111827;font-size:14px;font-weight:700;margin-top:6px;line-height:1.3;">DeepSeek V4 Review: Is It Really Better Than GPT-5?</div>
+        <div style="color:#6b7280;font-size:10px;margin-top:4px;">April 26, 2026 · 8 min read</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+        <div style="border-top:3px solid #111827;padding-top:6px;">
+          <div style="color:#111827;font-size:10px;font-weight:600;line-height:1.3;">Claude Code vs GitHub Copilot</div>
+          <div style="color:#9ca3af;font-size:9px;margin-top:2px;">5 min read</div>
+        </div>
+        <div style="border-top:3px solid #111827;padding-top:6px;">
+          <div style="color:#111827;font-size:10px;font-weight:600;line-height:1.3;">What is an AI Agent?</div>
+          <div style="color:#9ca3af;font-size:9px;margin-top:2px;">6 min read</div>
+        </div>
+        <div style="border-top:3px solid #111827;padding-top:6px;">
+          <div style="color:#111827;font-size:10px;font-weight:600;line-height:1.3;">LLM Glossary: Tokens & More</div>
+          <div style="color:#9ca3af;font-size:9px;margin-top:2px;">4 min read</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Clean Editorial</h3>
+      <p>White background, bold black typography, newspaper-style layout. Feels like The Verge or Wired. High AdSense click-through, professional credibility.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="modern-gradient" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:linear-gradient(135deg,#eff6ff 0%,#f5f3ff 100%);padding:20px;font-family:'Inter',sans-serif;min-height:180px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
+        <div style="background:linear-gradient(135deg,#3b82f6,#8b5cf6);border-radius:8px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;">
+          <span style="color:white;font-size:12px;font-weight:800;">A</span>
+        </div>
+        <span style="background:linear-gradient(135deg,#3b82f6,#8b5cf6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;font-weight:800;font-size:14px;">AI Tools Hub</span>
+      </div>
+      <div style="background:white;border-radius:12px;padding:12px;margin-bottom:10px;box-shadow:0 4px 20px rgba(99,102,241,0.1);">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+          <div style="width:6px;height:6px;background:#3b82f6;border-radius:50%;"></div>
+          <span style="color:#6366f1;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;">Top Review</span>
+        </div>
+        <div style="color:#1e1b4b;font-size:13px;font-weight:700;line-height:1.4;">DeepSeek V4 Review: Is It Really Better Than GPT-5?</div>
+        <div style="display:flex;gap:6px;margin-top:8px;">
+          <span style="background:#ede9fe;color:#7c3aed;font-size:9px;padding:2px 8px;border-radius:20px;font-weight:500;">deepseek</span>
+          <span style="background:#dbeafe;color:#1d4ed8;font-size:9px;padding:2px 8px;border-radius:20px;font-weight:500;">llm</span>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div style="background:white;border-radius:8px;padding:8px;box-shadow:0 2px 8px rgba(99,102,241,0.08);">
+          <div style="color:#374151;font-size:10px;font-weight:500;line-height:1.3;">Claude Code Review</div>
+          <div style="background:linear-gradient(135deg,#3b82f6,#8b5cf6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;font-size:9px;margin-top:3px;font-weight:600;">Read more →</div>
+        </div>
+        <div style="background:white;border-radius:8px;padding:8px;box-shadow:0 2px 8px rgba(99,102,241,0.08);">
+          <div style="color:#374151;font-size:10px;font-weight:500;line-height:1.3;">LangChain vs AutoGen</div>
+          <div style="background:linear-gradient(135deg,#3b82f6,#8b5cf6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;font-size:9px;margin-top:3px;font-weight:600;">Read more →</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Modern Gradient</h3>
+      <p>Light blue-purple gradient background, white cards with soft shadows, pill-shaped tags. Feels like a modern SaaS landing page. Visually striking, AdSense-friendly.</p>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:24px;text-align:center;">Click a card to select, or let me know in the terminal</p>

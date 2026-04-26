@@ -1,0 +1,161 @@
+<h2>Homepage Layout — Which structure works best?</h2>
+<p class="subtitle">Same Modern Gradient style, three different homepage layouts for a traffic/SEO site</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="hero-grid" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:linear-gradient(135deg,#eff6ff,#f5f3ff);padding:16px;font-family:'Inter',sans-serif;min-height:220px;">
+      <!-- Nav -->
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <span style="font-weight:800;font-size:11px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">AI Tools Hub</span>
+        <div style="display:flex;gap:10px;color:#6b7280;font-size:8px;">
+          <span>Tools</span><span>Agents</span><span>LLMs</span>
+        </div>
+      </div>
+      <!-- Hero -->
+      <div style="background:linear-gradient(135deg,#3b82f6,#8b5cf6);border-radius:10px;padding:12px;margin-bottom:10px;color:white;">
+        <div style="font-size:9px;opacity:0.8;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.08em;">⭐ Featured Article</div>
+        <div style="font-size:12px;font-weight:700;line-height:1.3;margin-bottom:6px;">DeepSeek V4 Review: Is It Really Better Than GPT-5?</div>
+        <div style="font-size:9px;opacity:0.7;">April 26 · 8 min read</div>
+      </div>
+      <!-- 3-col grid -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
+        <div style="background:white;border-radius:8px;padding:8px;box-shadow:0 2px 8px rgba(99,102,241,0.1);">
+          <div style="width:100%;height:32px;background:linear-gradient(135deg,#dbeafe,#ede9fe);border-radius:4px;margin-bottom:6px;"></div>
+          <div style="color:#1e1b4b;font-size:8px;font-weight:600;line-height:1.3;">Claude Code vs Copilot</div>
+          <div style="color:#8b5cf6;font-size:7px;margin-top:3px;">ai-tools</div>
+        </div>
+        <div style="background:white;border-radius:8px;padding:8px;box-shadow:0 2px 8px rgba(99,102,241,0.1);">
+          <div style="width:100%;height:32px;background:linear-gradient(135deg,#dbeafe,#ede9fe);border-radius:4px;margin-bottom:6px;"></div>
+          <div style="color:#1e1b4b;font-size:8px;font-weight:600;line-height:1.3;">What is an AI Agent?</div>
+          <div style="color:#8b5cf6;font-size:7px;margin-top:3px;">ai-agents</div>
+        </div>
+        <div style="background:white;border-radius:8px;padding:8px;box-shadow:0 2px 8px rgba(99,102,241,0.1);">
+          <div style="width:100%;height:32px;background:linear-gradient(135deg,#dbeafe,#ede9fe);border-radius:4px;margin-bottom:6px;"></div>
+          <div style="color:#1e1b4b;font-size:8px;font-weight:600;line-height:1.3;">LLM Glossary Explained</div>
+          <div style="color:#8b5cf6;font-size:7px;margin-top:3px;">llm</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A · Hero + Card Grid</h3>
+      <p>Big featured article banner at top, then a 3-column card grid below. Maximum article exposure per page. Best for AdSense (more content = more ad slots).</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="magazine" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:linear-gradient(135deg,#eff6ff,#f5f3ff);padding:16px;font-family:'Inter',sans-serif;min-height:220px;">
+      <!-- Nav -->
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <span style="font-weight:800;font-size:11px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">AI Tools Hub</span>
+        <div style="display:flex;gap:10px;color:#6b7280;font-size:8px;">
+          <span>Tools</span><span>Agents</span><span>LLMs</span>
+        </div>
+      </div>
+      <!-- Magazine layout: big left + sidebar right -->
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;">
+        <div>
+          <!-- Main big card -->
+          <div style="background:white;border-radius:10px;padding:10px;box-shadow:0 4px 16px rgba(99,102,241,0.12);margin-bottom:8px;">
+            <div style="width:100%;height:45px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);border-radius:6px;margin-bottom:8px;"></div>
+            <div style="color:#1e1b4b;font-size:10px;font-weight:700;line-height:1.3;margin-bottom:4px;">DeepSeek V4 Review: Is It Really Better Than GPT-5?</div>
+            <div style="color:#6b7280;font-size:8px;">8 min read</div>
+          </div>
+          <!-- Two small cards row -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+            <div style="background:white;border-radius:8px;padding:8px;box-shadow:0 2px 8px rgba(99,102,241,0.08);">
+              <div style="color:#1e1b4b;font-size:8px;font-weight:600;line-height:1.3;">Claude Code Review</div>
+              <div style="color:#8b5cf6;font-size:7px;margin-top:3px;">ai-tools →</div>
+            </div>
+            <div style="background:white;border-radius:8px;padding:8px;box-shadow:0 2px 8px rgba(99,102,241,0.08);">
+              <div style="color:#1e1b4b;font-size:8px;font-weight:600;line-height:1.3;">LangChain vs AutoGen</div>
+              <div style="color:#8b5cf6;font-size:7px;margin-top:3px;">ai-agents →</div>
+            </div>
+          </div>
+        </div>
+        <!-- Sidebar -->
+        <div>
+          <div style="color:#6b7280;font-size:7px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;">Latest</div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <div style="background:white;border-radius:6px;padding:6px;box-shadow:0 2px 6px rgba(99,102,241,0.08);">
+              <div style="color:#1e1b4b;font-size:7px;font-weight:600;line-height:1.3;">What is an AI Agent?</div>
+            </div>
+            <div style="background:white;border-radius:6px;padding:6px;box-shadow:0 2px 6px rgba(99,102,241,0.08);">
+              <div style="color:#1e1b4b;font-size:7px;font-weight:600;line-height:1.3;">LLM Glossary: Tokens</div>
+            </div>
+            <div style="background:#f3f4f6;border-radius:6px;padding:6px;">
+              <div style="color:#9ca3af;font-size:7px;text-align:center;">Ad</div>
+            </div>
+            <div style="background:white;border-radius:6px;padding:6px;box-shadow:0 2px 6px rgba(99,102,241,0.08);">
+              <div style="color:#1e1b4b;font-size:7px;font-weight:600;line-height:1.3;">Harness CI/CD Guide</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B · Magazine Layout</h3>
+      <p>Featured article takes 2/3 width, sidebar with latest articles + ad slot takes 1/3. Classic tech blog format like TechCrunch. Great sidebar ad placement.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="category-hub" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:linear-gradient(135deg,#eff6ff,#f5f3ff);padding:16px;font-family:'Inter',sans-serif;min-height:220px;">
+      <!-- Nav -->
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <span style="font-weight:800;font-size:11px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">AI Tools Hub</span>
+        <div style="display:flex;gap:6px;">
+          <span style="background:white;border-radius:20px;padding:2px 8px;font-size:7px;color:#6366f1;font-weight:600;box-shadow:0 1px 4px rgba(99,102,241,0.15);">Tools</span>
+          <span style="background:white;border-radius:20px;padding:2px 8px;font-size:7px;color:#6366f1;font-weight:600;box-shadow:0 1px 4px rgba(99,102,241,0.15);">Agents</span>
+          <span style="background:white;border-radius:20px;padding:2px 8px;font-size:7px;color:#6366f1;font-weight:600;box-shadow:0 1px 4px rgba(99,102,241,0.15);">LLMs</span>
+        </div>
+      </div>
+      <!-- Category sections -->
+      <div style="margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+          <div style="width:3px;height:12px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);border-radius:2px;"></div>
+          <span style="color:#1e1b4b;font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">🤖 AI Agents</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;">
+          <div style="background:white;border-radius:6px;padding:6px;box-shadow:0 2px 6px rgba(99,102,241,0.08);">
+            <div style="color:#1e1b4b;font-size:7px;font-weight:600;line-height:1.3;">What is an AI Agent?</div>
+          </div>
+          <div style="background:white;border-radius:6px;padding:6px;box-shadow:0 2px 6px rgba(99,102,241,0.08);">
+            <div style="color:#1e1b4b;font-size:7px;font-weight:600;line-height:1.3;">LangChain vs AutoGen</div>
+          </div>
+          <div style="background:white;border-radius:6px;padding:6px;box-shadow:0 2px 6px rgba(99,102,241,0.08);">
+            <div style="color:#1e1b4b;font-size:7px;font-weight:600;line-height:1.3;">Build Your First Agent</div>
+          </div>
+        </div>
+      </div>
+      <!-- Ad banner -->
+      <div style="background:#f3f4f6;border-radius:6px;padding:4px;text-align:center;margin-bottom:8px;">
+        <span style="color:#9ca3af;font-size:7px;">— Advertisement —</span>
+      </div>
+      <div>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+          <div style="width:3px;height:12px;background:linear-gradient(135deg,#3b82f6,#8b5cf6);border-radius:2px;"></div>
+          <span style="color:#1e1b4b;font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">🧠 LLMs</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;">
+          <div style="background:white;border-radius:6px;padding:6px;box-shadow:0 2px 6px rgba(99,102,241,0.08);">
+            <div style="color:#1e1b4b;font-size:7px;font-weight:600;line-height:1.3;">DeepSeek V4 Review</div>
+          </div>
+          <div style="background:white;border-radius:6px;padding:6px;box-shadow:0 2px 6px rgba(99,102,241,0.08);">
+            <div style="color:#1e1b4b;font-size:7px;font-weight:600;line-height:1.3;">LLM Glossary</div>
+          </div>
+          <div style="background:white;border-radius:6px;padding:6px;box-shadow:0 2px 6px rgba(99,102,241,0.08);">
+            <div style="color:#1e1b4b;font-size:7px;font-weight:600;line-height:1.3;">Claude vs GPT-5</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C · Category Hub</h3>
+      <p>No hero banner — instead organized by topic sections (AI Agents, LLMs, Tools). Ad banner between sections. Best SEO internal linking, helps Google understand site structure.</p>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:20px;text-align:center;">Click to select a layout direction</p>

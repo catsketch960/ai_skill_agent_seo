@@ -20,7 +20,7 @@ export default function AdUnit({ slot, format = 'auto', className = '' }: AdUnit
     try {
       ;(window.adsbygoogle = window.adsbygoogle || []).push({})
     } catch {}
-  }, [])
+  }, [publisherId])
 
   if (!publisherId) {
     return (

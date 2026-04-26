@@ -179,24 +179,22 @@ def main() -> None:
             body = generate_article(client, topic)
             print(f"  ✓ Article written ({len(body.split())} words)")
 
-            hero_image = None
-            if DASHSCOPE_API_KEY:
-                print(f"  Generating hero image...")
-                hero_image = generate_hero_image(topic["title"], topic["slug"])
-                print(f"  {'✓ Hero image saved' if hero_image else '✗ Hero image failed (skipping)'}")
-
-            hero_path = HEROES_DIR / f"{topic['slug']}.png" if hero_image else None
-            filepath = write_post(topic, body, pub_date, hero_image)
+            filepath = write_post(topic, body, pub_date, None)
             progress["published"].append(topic["id"])
             save_progress(progress)
-            git_commit(filepath, hero_path, topic["title"])
-            print(f"  ✓ Committed: {filepath.name}")
+            print(f"  ✓ Saved: {filepath.name}")
         except Exception as e:
             print(f"  ✗ Failed: {e}", file=sys.stderr)
             continue
 
-    git_push()
-    print(f"Done. {len(batch)} articles published and pushed.")
+    # Commit all articles in one batch
+    subprocess.run(["git", "add", str(POSTS_DIR), str(PROGRESS_FILE)], cwd=REPO_ROOT, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", f"content: add {len(batch)} articles\n\nCo-Authored-By: Claude Code <claude-sonnet-4-6> <noreply@anthropic.com>"],
+        cwd=REPO_ROOT,
+        check=True,
+    )
+    print(f"\nDone. {len(batch)} articles generated and committed.")
 
 
 if __name__ == "__main__":
