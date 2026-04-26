@@ -21,7 +21,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const publisherId = process.env.NEXT_PUBLIC_ADSENSE_PUBLISHER_ID
   return (
     <html lang="en" className={inter.className}>
-      <head>
+      <body className="antialiased">
+        <Nav />
         {publisherId && (
           <Script
             async
@@ -30,9 +31,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             strategy="afterInteractive"
           />
         )}
-      </head>
-      <body className="antialiased">
-        <Nav />
         <main className="max-w-6xl mx-auto px-6 py-10">{children}</main>
         <Footer />
       </body>

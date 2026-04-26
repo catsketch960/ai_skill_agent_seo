@@ -16,6 +16,7 @@ export default function AdUnit({ slot, format = 'auto', className = '' }: AdUnit
   const publisherId = process.env.NEXT_PUBLIC_ADSENSE_PUBLISHER_ID
 
   useEffect(() => {
+    if (!publisherId) return
     try {
       ;(window.adsbygoogle = window.adsbygoogle || []).push({})
     } catch {}

@@ -55,6 +55,9 @@ export default function Nav() {
               {l.label}
             </Link>
           ))}
+          <Link href="/about" className="text-[14px] text-body" onClick={() => setOpen(false)}>
+            About
+          </Link>
         </nav>
       )}
     </header>
