@@ -1,7 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
+import SiteSearch from '@/components/SiteSearch'
 
 const LINKS = [
   { label: 'AI Tools', href: '/category/ai-tools' },
@@ -16,7 +17,7 @@ export default function Nav() {
 
   return (
     <header className="frosted sticky top-0 z-50 border-b border-indigo-100/40">
-      <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between">
+      <div className="max-w-6xl mx-auto px-6 py-3 flex items-center gap-6">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2 shrink-0">
           <div className="w-8 h-8 rounded-lg gradient-btn flex items-center justify-center text-white font-black text-sm">
@@ -25,8 +26,12 @@ export default function Nav() {
           <span className="font-extrabold text-[15px] gradient-text">AI Tools Hub</span>
         </Link>
 
+        <Suspense fallback={<div className="hidden md:block md:flex-1 md:max-w-[540px]" />}>
+          <SiteSearch />
+        </Suspense>
+
         {/* Desktop nav */}
-        <nav className="hidden md:flex items-center gap-6">
+        <nav className="hidden md:flex items-center gap-6 ml-auto">
           {LINKS.map(l => (
             <Link key={l.href} href={l.href} className="text-[13px] text-muted hover:text-heading transition-colors">
               {l.label}
@@ -42,7 +47,7 @@ export default function Nav() {
 
         {/* Mobile hamburger */}
         <button
-          className="md:hidden text-muted p-1"
+          className="md:hidden text-muted p-1 ml-auto"
           onClick={() => setOpen(o => !o)}
           aria-label="Toggle menu"
         >

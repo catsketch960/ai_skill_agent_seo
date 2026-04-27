@@ -4,9 +4,17 @@ import SectionHeader from '@/components/SectionHeader'
 import AdUnit from '@/components/AdUnit'
 import ArticleSearch from '@/components/ArticleSearch'
 
-export default function HomePage() {
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string | string[] }>
+}) {
   const posts = getAllPosts()
   const featured = posts[0]
+  const resolvedSearchParams = await searchParams
+  const initialQuery = Array.isArray(resolvedSearchParams.q)
+    ? (resolvedSearchParams.q[0] ?? '')
+    : (resolvedSearchParams.q ?? '')
 
   return (
     <>
@@ -22,7 +30,7 @@ export default function HomePage() {
         </p>
       )}
 
-      <ArticleSearch posts={posts} featuredSlug={featured?.slug} />
+      <ArticleSearch posts={posts} featuredSlug={featured?.slug} initialQuery={initialQuery} />
     </>
   )
 }
