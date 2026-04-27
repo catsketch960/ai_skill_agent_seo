@@ -12,7 +12,11 @@ export default function HomePage() {
     <>
       {featured && <HeroBanner post={featured} />}
 
-      <AdUnit slot="homepage-leaderboard" className="h-[100px] mb-8" />
+      <AdUnit
+        slot="homepage-leaderboard"
+        format="rectangle"
+        className="h-[100px] mb-8 mx-auto w-full max-w-4xl"
+      />
 
       <SectionHeader title="Latest Articles" />
 
