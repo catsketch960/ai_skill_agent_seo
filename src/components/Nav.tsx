@@ -35,6 +35,9 @@ export default function Nav() {
           <Link href="/about" className="gradient-btn text-[12px] px-4 py-[6px]">
             About
           </Link>
+          <Link href="/contact" className="text-[13px] text-muted hover:text-heading transition-colors">
+            Contact
+          </Link>
         </nav>
 
         {/* Mobile hamburger */}
@@ -57,6 +60,9 @@ export default function Nav() {
           ))}
           <Link href="/about" className="text-[14px] text-body" onClick={() => setOpen(false)}>
             About
+          </Link>
+          <Link href="/contact" className="text-[14px] text-body" onClick={() => setOpen(false)}>
+            Contact
           </Link>
         </nav>
       )}
