@@ -4,6 +4,7 @@ import Script from 'next/script'
 import { Analytics } from '@vercel/analytics/next'
 import Nav from '@/components/Nav'
 import Footer from '@/components/Footer'
+import { getAdSensePublisherId } from '@/lib/ads'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin'], display: 'swap' })
@@ -19,7 +20,7 @@ export const metadata: Metadata = {
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const publisherId = process.env.NEXT_PUBLIC_ADSENSE_PUBLISHER_ID
+  const publisherId = getAdSensePublisherId()
   return (
     <html lang="en" className={inter.className}>
       <body className="antialiased">

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
+import { getAdSensePublisherId } from '@/lib/ads'
 
 declare global {
   interface Window { adsbygoogle: unknown[] }
@@ -13,7 +14,7 @@ interface AdUnitProps {
 }
 
 export default function AdUnit({ slot, format = 'auto', className = '' }: AdUnitProps) {
-  const publisherId = process.env.NEXT_PUBLIC_ADSENSE_PUBLISHER_ID
+  const publisherId = getAdSensePublisherId()
 
   useEffect(() => {
     if (!publisherId) return

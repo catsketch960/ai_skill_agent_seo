@@ -1,0 +1,5 @@
+const DEFAULT_ADSENSE_PUBLISHER_ID = 'ca-pub-7116442036465415'
+
+export function getAdSensePublisherId() {
+  return process.env.NEXT_PUBLIC_ADSENSE_PUBLISHER_ID ?? DEFAULT_ADSENSE_PUBLISHER_ID
+}
