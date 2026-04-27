@@ -3,6 +3,7 @@ title: "OpenAI Assistants API: Build Custom AI Assistants"
 date: "2026-04-26"
 slug: "openai-assistants-api-build-custom-ai-assistants"
 description: "A practical, developer-friendly guide to openai assistants api: build custom ai assistants with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/openai-assistants-api-build-custom-ai-assistants.webp"
 tags: [llm, ai-tools]
 ---
 

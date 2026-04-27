@@ -3,6 +3,7 @@ title: "Low-Rank Adaptation (LoRA): Efficient LLM Fine-Tuning"
 date: "2026-04-26"
 slug: "low-rank-adaptation-lora-efficient-llm-fine-tuning"
 description: "A practical, developer-friendly guide to low-rank adaptation (lora): efficient llm fine-tuning with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/low-rank-adaptation-lora-efficient-llm-fine-tuning.webp"
 tags: [llm, ai-tools]
 ---
 

@@ -3,6 +3,7 @@ title: "Llama 3: Running Meta's Best Open Model Locally"
 date: "2026-04-26"
 slug: "llama-3-running-meta-open-model-locally"
 description: "A practical, developer-friendly guide to llama 3: running meta's best open model locally with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/llama-3-running-meta-open-model-locally.webp"
 tags: [llm, ai-tools]
 ---
 

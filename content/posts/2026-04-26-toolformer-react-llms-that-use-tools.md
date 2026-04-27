@@ -3,6 +3,7 @@ title: "Toolformer and ReAct: LLMs That Use Tools"
 date: "2026-04-26"
 slug: "toolformer-react-llms-that-use-tools"
 description: "A practical, developer-friendly guide to toolformer and react: llms that use tools with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/toolformer-react-llms-that-use-tools.webp"
 tags: [llm, ai-agents]
 ---
 

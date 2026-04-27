@@ -3,6 +3,7 @@ title: "Multimodal AI: Working with Text, Images, and Audio"
 date: "2026-04-26"
 slug: "multimodal-ai-working-text-images-audio"
 description: "A practical, developer-friendly guide to multimodal ai: working with text, images, and audio with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/multimodal-ai-working-text-images-audio.webp"
 tags: [llm, ai-tools]
 ---
 

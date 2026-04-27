@@ -3,6 +3,7 @@ title: "AI APIs Cost Comparison: Claude vs OpenAI vs Gemini"
 date: "2026-04-26"
 slug: "ai-apis-cost-comparison-claude-openai-gemini"
 description: "A practical, developer-friendly guide to ai apis cost comparison: claude vs openai vs gemini with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/ai-apis-cost-comparison-claude-openai-gemini.webp"
 tags: [llm, ai-tools]
 ---
 

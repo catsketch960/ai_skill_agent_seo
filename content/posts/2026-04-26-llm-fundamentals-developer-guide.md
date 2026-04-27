@@ -3,6 +3,7 @@ title: "LLM Fundamentals: What Every Developer Should Know"
 date: "2026-04-26"
 slug: "llm-fundamentals-developer-guide"
 description: "A practical, developer-friendly guide to llm fundamentals: what every developer should know with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/llm-fundamentals-developer-guide.webp"
 tags: [llm, ai-tools]
 ---
 

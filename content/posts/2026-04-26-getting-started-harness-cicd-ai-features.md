@@ -3,6 +3,7 @@ title: "Getting Started with Harness CI/CD and AI Features"
 date: "2026-04-26"
 slug: "getting-started-harness-cicd-ai-features"
 description: "A practical, developer-friendly guide to getting started with harness ci/cd and ai features with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/getting-started-harness-cicd-ai-features.webp"
 tags: [harness, ai-tools]
 ---
 

@@ -3,6 +3,7 @@ title: "AI in Production: Monitoring, Logging, and Observability"
 date: "2026-04-26"
 slug: "ai-in-production-monitoring-logging-observability"
 description: "A practical, developer-friendly guide to ai in production: monitoring, logging, and observability with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/ai-in-production-monitoring-logging-observability.webp"
 tags: [ai-tools]
 ---
 

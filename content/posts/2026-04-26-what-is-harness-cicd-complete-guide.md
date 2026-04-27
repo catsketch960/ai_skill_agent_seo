@@ -3,6 +3,7 @@ title: "What Is Harness CI/CD? A Complete Guide for DevOps Teams"
 date: "2026-04-26"
 slug: "what-is-harness-cicd-complete-guide"
 description: "Learn everything about what is harness ci/cd? a complete guide for devops teams in this in-depth guide."
+heroImage: "/images/heroes/what-is-harness-cicd-complete-guide.webp"
 tags: [harness, ai-tools]
 ---
 

@@ -3,6 +3,7 @@ title: "How Large Language Models Work: Transformers Explained"
 date: "2026-04-26"
 slug: "how-large-language-models-work-transformers-explained"
 description: "A practical, developer-friendly guide to how large language models work: transformers explained with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/how-large-language-models-work-transformers-explained.webp"
 tags: [llm, ai-tools]
 ---
 

@@ -1490,7 +1490,7 @@ if __name__ == "__main__":
 - [ ] **Step 2: Add DASHSCOPE_API_KEY to .env.local**
 
 ```bash
-echo 'DASHSCOPE_API_KEY=sk-fadb91c86bf14db1afd61d791ad8a960' >> .env.local
+echo 'DASHSCOPE_API_KEY=your_dashscope_key' >> .env.local
 ```
 
 - [ ] **Step 3: Add DASHSCOPE_API_KEY to GitHub Actions workflow**
@@ -1542,7 +1542,7 @@ Expected: `✓ Compiled successfully` with no TypeScript errors.
 
 ```bash
 pip install anthropic requests
-ANTHROPIC_API_KEY=your_key DASHSCOPE_API_KEY=sk-fadb91c86bf14db1afd61d791ad8a960 python scripts/agent/generate.py 1
+ANTHROPIC_API_KEY=your_key DASHSCOPE_API_KEY=your_dashscope_key python scripts/agent/generate.py 1
 ```
 Expected: one `.md` in `content/posts/`, one `.png` in `public/images/heroes/`, committed.
 

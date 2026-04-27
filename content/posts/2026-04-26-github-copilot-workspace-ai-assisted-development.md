@@ -3,6 +3,7 @@ title: "GitHub Copilot Workspace: AI-Assisted Development End to End"
 date: "2026-04-26"
 slug: "github-copilot-workspace-ai-assisted-development"
 description: "A practical, developer-friendly guide to github copilot workspace: ai-assisted development end to end with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/github-copilot-workspace-ai-assisted-development.webp"
 tags: [ai-tools]
 ---
 

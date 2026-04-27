@@ -3,6 +3,7 @@ title: "DeepSeek V4: Everything You Need to Know"
 date: "2026-04-26"
 slug: "deepseek-v4-everything-you-need-to-know"
 description: "A practical, developer-friendly guide to deepseek v4: everything you need to know with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/deepseek-v4-everything-you-need-to-know.webp"
 tags: [deepseek, llm]
 ---
 

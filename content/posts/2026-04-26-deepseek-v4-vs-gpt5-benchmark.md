@@ -3,6 +3,7 @@ title: "DeepSeek V4 vs GPT-5: Which LLM Wins in 2026?"
 date: "2026-04-26"
 slug: "deepseek-v4-vs-gpt5-benchmark"
 description: "A head-to-head benchmark comparison of DeepSeek V4 and GPT-5 across coding, reasoning, and creative tasks."
+heroImage: "/images/heroes/deepseek-v4-vs-gpt5-benchmark.webp"
 tags: [deepseek, llm]
 ---
 

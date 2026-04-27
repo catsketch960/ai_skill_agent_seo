@@ -3,6 +3,7 @@ title: "Function Calling in LLMs: Tools, APIs, and Agents"
 date: "2026-04-26"
 slug: "function-calling-llms-tools-apis-agents"
 description: "A practical, developer-friendly guide to function calling in llms: tools, apis, and agents with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/function-calling-llms-tools-apis-agents.webp"
 tags: [llm, ai-agents]
 ---
 

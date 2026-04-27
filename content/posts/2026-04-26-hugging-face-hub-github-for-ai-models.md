@@ -3,6 +3,7 @@ title: "Hugging Face Hub: The GitHub for AI Models"
 date: "2026-04-26"
 slug: "hugging-face-hub-github-for-ai-models"
 description: "A practical, developer-friendly guide to hugging face hub: the github for ai models with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/hugging-face-hub-github-for-ai-models.webp"
 tags: [llm, ai-tools]
 ---
 

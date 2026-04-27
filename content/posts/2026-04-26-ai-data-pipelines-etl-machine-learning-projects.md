@@ -3,6 +3,7 @@ title: "AI Data Pipelines: ETL for Machine Learning Projects"
 date: "2026-04-26"
 slug: "ai-data-pipelines-etl-machine-learning-projects"
 description: "A practical, developer-friendly guide to ai data pipelines: etl for machine learning projects with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/ai-data-pipelines-etl-machine-learning-projects.webp"
 tags: [ai-tools]
 ---
 

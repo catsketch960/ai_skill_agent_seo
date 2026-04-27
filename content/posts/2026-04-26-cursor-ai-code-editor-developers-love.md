@@ -3,6 +3,7 @@ title: "Cursor: The AI Code Editor Developers Love"
 date: "2026-04-26"
 slug: "cursor-ai-code-editor-developers-love"
 description: "A practical, developer-friendly guide to cursor: the ai code editor developers love with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/cursor-ai-code-editor-developers-love.webp"
 tags: [ai-tools]
 ---
 

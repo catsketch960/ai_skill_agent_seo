@@ -3,6 +3,7 @@ title: "Multi-Agent Systems: Architectures and Patterns"
 date: "2026-04-26"
 slug: "multi-agent-systems-architectures-patterns"
 description: "A practical, developer-friendly guide to multi-agent systems: architectures and patterns with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/multi-agent-systems-architectures-patterns.webp"
 tags: [ai-agents, ai-tools]
 ---
 

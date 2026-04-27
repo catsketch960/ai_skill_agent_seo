@@ -3,6 +3,7 @@ title: "LangGraph: Building Stateful AI Agents"
 date: "2026-04-26"
 slug: "langgraph-building-stateful-ai-agents"
 description: "A practical, developer-friendly guide to langgraph: building stateful ai agents with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/langgraph-building-stateful-ai-agents.webp"
 tags: [ai-agents, ai-tools]
 ---
 

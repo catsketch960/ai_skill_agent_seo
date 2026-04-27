@@ -3,6 +3,7 @@ title: "AI Code Review: Tools, Techniques, and Best Practices"
 date: "2026-04-26"
 slug: "ai-code-review-tools-techniques-best-practices"
 description: "A practical, developer-friendly guide to ai code review: tools, techniques, and best practices with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/ai-code-review-tools-techniques-best-practices.webp"
 tags: [ai-tools]
 ---
 

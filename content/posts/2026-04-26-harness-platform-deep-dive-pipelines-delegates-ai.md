@@ -3,6 +3,7 @@ title: "Harness Platform Deep Dive: Pipelines, Delegates, and AI Insights"
 date: "2026-04-26"
 slug: "harness-platform-deep-dive-pipelines-delegates-ai"
 description: "A practical, developer-friendly guide to harness platform deep dive: pipelines, delegates, and ai insights with architecture, evaluation, rollout advice, a..."
+heroImage: "/images/heroes/harness-platform-deep-dive-pipelines-delegates-ai.webp"
 tags: [harness, ai-tools]
 ---
 

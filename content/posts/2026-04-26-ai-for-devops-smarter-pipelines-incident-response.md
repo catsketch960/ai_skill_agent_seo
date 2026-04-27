@@ -3,6 +3,7 @@ title: "AI for DevOps: Smarter Pipelines and Incident Response"
 date: "2026-04-26"
 slug: "ai-for-devops-smarter-pipelines-incident-response"
 description: "A practical, developer-friendly guide to ai for devops: smarter pipelines and incident response with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/ai-for-devops-smarter-pipelines-incident-response.webp"
 tags: [ai-tools]
 ---
 

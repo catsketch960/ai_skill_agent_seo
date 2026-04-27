@@ -3,6 +3,7 @@ title: "DeepSeek V4 Fine-Tuning: A Step-by-Step Guide"
 date: "2026-04-26"
 slug: "deepseek-v4-fine-tuning-step-by-step-guide"
 description: "A practical, developer-friendly guide to deepseek v4 fine-tuning: a step-by-step guide with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/deepseek-v4-fine-tuning-step-by-step-guide.webp"
 tags: [deepseek, llm]
 ---
 

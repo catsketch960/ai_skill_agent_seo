@@ -3,6 +3,7 @@ title: "AI Agent Orchestration: Managing Complex Workflows"
 date: "2026-04-26"
 slug: "ai-agent-orchestration-managing-complex-workflows"
 description: "A practical, developer-friendly guide to ai agent orchestration: managing complex workflows with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/ai-agent-orchestration-managing-complex-workflows.webp"
 tags: [ai-agents, ai-tools]
 ---
 

@@ -3,6 +3,7 @@ title: "GPT-5: What to Expect from OpenAI's Next Flagship Model"
 date: "2026-04-26"
 slug: "gpt-5-what-to-expect-openai-next-flagship-model"
 description: "A practical, developer-friendly guide to gpt-5: what to expect from openai's next flagship model with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/gpt-5-what-to-expect-openai-next-flagship-model.webp"
 tags: [llm, ai-tools]
 ---
 

@@ -3,6 +3,7 @@ title: "Tool Use in AI Agents: Web Search, Code Execution, and APIs"
 date: "2026-04-26"
 slug: "tool-use-ai-agents-web-search-code-execution-apis"
 description: "A practical, developer-friendly guide to tool use in ai agents: web search, code execution, and apis with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/tool-use-ai-agents-web-search-code-execution-apis.webp"
 tags: [ai-agents, ai-tools]
 ---
 

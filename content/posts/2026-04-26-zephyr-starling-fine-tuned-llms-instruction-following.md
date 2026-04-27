@@ -3,6 +3,7 @@ title: "Zephyr and Starling: Fine-Tuned LLMs for Instruction Following"
 date: "2026-04-26"
 slug: "zephyr-starling-fine-tuned-llms-instruction-following"
 description: "A practical, developer-friendly guide to zephyr and starling: fine-tuned llms for instruction following with architecture, evaluation, rollout advice, and..."
+heroImage: "/images/heroes/zephyr-starling-fine-tuned-llms-instruction-following.webp"
 tags: [llm, ai-tools]
 ---
 

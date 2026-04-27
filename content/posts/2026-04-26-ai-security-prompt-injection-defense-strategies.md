@@ -3,6 +3,7 @@ title: "AI Security: Prompt Injection and Defense Strategies"
 date: "2026-04-26"
 slug: "ai-security-prompt-injection-defense-strategies"
 description: "A practical, developer-friendly guide to ai security: prompt injection and defense strategies with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/ai-security-prompt-injection-defense-strategies.webp"
 tags: [llm, ai-tools]
 ---
 

@@ -3,6 +3,7 @@ title: "OpenRouter: Access Every LLM Through One API"
 date: "2026-04-26"
 slug: "openrouter-access-every-llm-through-one-api"
 description: "A practical, developer-friendly guide to openrouter: access every llm through one api with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/openrouter-access-every-llm-through-one-api.webp"
 tags: [llm, ai-tools]
 ---
 

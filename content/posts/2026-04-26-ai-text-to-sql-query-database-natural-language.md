@@ -3,6 +3,7 @@ title: "AI Text-to-SQL: Query Your Database with Natural Language"
 date: "2026-04-26"
 slug: "ai-text-to-sql-query-database-natural-language"
 description: "A practical, developer-friendly guide to ai text-to-sql: query your database with natural language with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/ai-text-to-sql-query-database-natural-language.webp"
 tags: [ai-tools]
 ---
 

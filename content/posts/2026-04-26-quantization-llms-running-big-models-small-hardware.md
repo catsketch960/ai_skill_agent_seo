@@ -3,6 +3,7 @@ title: "Quantization for LLMs: Running Big Models on Small Hardware"
 date: "2026-04-26"
 slug: "quantization-llms-running-big-models-small-hardware"
 description: "A practical, developer-friendly guide to quantization for llms: running big models on small hardware with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/quantization-llms-running-big-models-small-hardware.webp"
 tags: [llm, ai-tools]
 ---
 

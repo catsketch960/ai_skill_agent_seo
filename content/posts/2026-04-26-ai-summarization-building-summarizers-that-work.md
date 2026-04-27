@@ -3,6 +3,7 @@ title: "AI Summarization: Building Summarizers That Actually Work"
 date: "2026-04-26"
 slug: "ai-summarization-building-summarizers-that-work"
 description: "A practical, developer-friendly guide to ai summarization: building summarizers that actually work with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/ai-summarization-building-summarizers-that-work.webp"
 tags: [llm, ai-tools]
 ---
 

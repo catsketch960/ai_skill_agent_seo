@@ -43,7 +43,7 @@ export default function ArticleCard({ post }: { post: PostMeta }) {
               src={post.heroImage}
               alt={post.title}
               fill
-              className="object-cover opacity-80"
+              className="object-cover"
               sizes="(max-width: 768px) 100vw, 33vw"
             />
           ) : (

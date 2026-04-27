@@ -3,6 +3,7 @@ title: "Embeddings: How AI Understands Meaning in Text"
 date: "2026-04-26"
 slug: "embeddings-how-ai-understands-meaning-in-text"
 description: "A practical, developer-friendly guide to embeddings: how ai understands meaning in text with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/embeddings-how-ai-understands-meaning-in-text.webp"
 tags: [llm, ai-tools]
 ---
 

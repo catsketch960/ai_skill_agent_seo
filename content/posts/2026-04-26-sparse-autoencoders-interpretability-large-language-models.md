@@ -3,6 +3,7 @@ title: "Sparse Autoencoders: Interpretability in Large Language Models"
 date: "2026-04-26"
 slug: "sparse-autoencoders-interpretability-large-language-models"
 description: "A practical, developer-friendly guide to sparse autoencoders: interpretability in large language models with architecture, evaluation, rollout advice, and..."
+heroImage: "/images/heroes/sparse-autoencoders-interpretability-large-language-models.webp"
 tags: [llm, ai-tools]
 ---
 

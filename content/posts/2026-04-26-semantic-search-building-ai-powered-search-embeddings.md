@@ -3,6 +3,7 @@ title: "Semantic Search: Building AI-Powered Search with Embeddings"
 date: "2026-04-26"
 slug: "semantic-search-building-ai-powered-search-embeddings"
 description: "A practical, developer-friendly guide to semantic search: building ai-powered search with embeddings with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/semantic-search-building-ai-powered-search-embeddings.webp"
 tags: [llm, ai-tools]
 ---
 

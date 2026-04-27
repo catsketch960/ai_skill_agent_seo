@@ -3,6 +3,7 @@ title: "Building Apps with the Claude API: A Complete Tutorial"
 date: "2026-04-26"
 slug: "building-apps-claude-api-complete-tutorial"
 description: "A practical, developer-friendly guide to building apps with the claude api: a complete tutorial with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/building-apps-claude-api-complete-tutorial.webp"
 tags: [claude, llm]
 ---
 

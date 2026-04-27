@@ -3,6 +3,7 @@ title: "LLM Inference Optimization: Speed Up Your Models"
 date: "2026-04-26"
 slug: "llm-inference-optimization-speed-up-your-models"
 description: "A practical, developer-friendly guide to llm inference optimization: speed up your models with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/llm-inference-optimization-speed-up-your-models.webp"
 tags: [llm, ai-tools]
 ---
 

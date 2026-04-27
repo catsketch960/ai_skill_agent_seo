@@ -3,6 +3,7 @@ title: "AI Chatbot Architecture: From Prototype to Production"
 date: "2026-04-26"
 slug: "ai-chatbot-architecture-prototype-to-production"
 description: "A practical, developer-friendly guide to ai chatbot architecture: from prototype to production with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/ai-chatbot-architecture-prototype-to-production.webp"
 tags: [ai-agents, ai-tools]
 ---
 

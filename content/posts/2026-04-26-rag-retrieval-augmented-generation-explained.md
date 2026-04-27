@@ -3,6 +3,7 @@ title: "RAG: Retrieval-Augmented Generation Explained"
 date: "2026-04-26"
 slug: "rag-retrieval-augmented-generation-explained"
 description: "A practical, developer-friendly guide to rag: retrieval-augmented generation explained with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/rag-retrieval-augmented-generation-explained.webp"
 tags: [llm, ai-tools]
 ---
 

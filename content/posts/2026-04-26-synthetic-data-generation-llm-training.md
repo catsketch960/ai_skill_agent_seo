@@ -3,6 +3,7 @@ title: "Synthetic Data Generation for LLM Training"
 date: "2026-04-26"
 slug: "synthetic-data-generation-llm-training"
 description: "A practical, developer-friendly guide to synthetic data generation for llm training with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/synthetic-data-generation-llm-training.webp"
 tags: [llm, ai-tools]
 ---
 

@@ -3,6 +3,7 @@ title: "Agentic AI: From Chatbots to Autonomous Systems"
 date: "2026-04-26"
 slug: "agentic-ai-from-chatbots-to-autonomous-systems"
 description: "A practical, developer-friendly guide to agentic ai: from chatbots to autonomous systems with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/agentic-ai-from-chatbots-to-autonomous-systems.webp"
 tags: [ai-agents, ai-tools]
 ---
 

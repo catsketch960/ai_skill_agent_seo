@@ -3,6 +3,7 @@ title: "Claude Haiku: Fast and Affordable AI for High-Volume Tasks"
 date: "2026-04-26"
 slug: "claude-haiku-fast-affordable-ai-high-volume-tasks"
 description: "A practical, developer-friendly guide to claude haiku: fast and affordable ai for high-volume tasks with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/claude-haiku-fast-affordable-ai-high-volume-tasks.webp"
 tags: [claude, llm]
 ---
 

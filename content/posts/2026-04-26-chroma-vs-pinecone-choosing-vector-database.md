@@ -3,6 +3,7 @@ title: "Chroma vs Pinecone: Choosing a Vector Database"
 date: "2026-04-26"
 slug: "chroma-vs-pinecone-choosing-vector-database"
 description: "A practical, developer-friendly guide to chroma vs pinecone: choosing a vector database with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/chroma-vs-pinecone-choosing-vector-database.webp"
 tags: [llm, ai-tools]
 ---
 

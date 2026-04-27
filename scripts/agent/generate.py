@@ -35,10 +35,13 @@ Requirements:
 """
 
 IMAGE_PROMPT_TEMPLATE = (
-    "A futuristic AI technology illustration for an article titled '{title}', "
-    "blue and purple gradient color palette, glowing neural network nodes, "
-    "clean modern digital art, professional tech blog style, wide 16:9 format, "
-    "no text, no letters"
+    "Wide 16:9 editorial header image in the style of a bright real-world business "
+    "whiteboard brainstorming session: a professional person or hand drawing colorful "
+    "marker diagrams on a large whiteboard, with clean charts, arrows, AI workflow boxes, "
+    "cloud and API sketches, subtle analytics graphs, natural office lighting, realistic "
+    "photography, crisp details, modern technology publication style. "
+    "Article theme: '{title}'. No logos, no brand names, no readable text, no watermark, "
+    "no UI screenshot, no cartoon icons."
 )
 
 
@@ -81,7 +84,7 @@ def generate_hero_image(title: str, slug: str) -> str | None:
             "X-DashScope-Async": "enable",
         },
         json={
-            "model": "wanx-v1",
+            "model": "wanx2.1-t2i-turbo",
             "input": {"prompt": IMAGE_PROMPT_TEMPLATE.format(title=title)},
             "parameters": {"size": "1280*720", "n": 1},
         },

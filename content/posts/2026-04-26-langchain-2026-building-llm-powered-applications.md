@@ -3,6 +3,7 @@ title: "LangChain in 2026: Building LLM-Powered Applications"
 date: "2026-04-26"
 slug: "langchain-2026-building-llm-powered-applications"
 description: "A practical, developer-friendly guide to langchain in 2026: building llm-powered applications with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/langchain-2026-building-llm-powered-applications.webp"
 tags: [ai-agents, ai-tools]
 ---
 

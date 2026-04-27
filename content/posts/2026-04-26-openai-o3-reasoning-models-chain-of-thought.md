@@ -3,6 +3,7 @@ title: "OpenAI o3: Reasoning Models and Chain-of-Thought"
 date: "2026-04-26"
 slug: "openai-o3-reasoning-models-chain-of-thought"
 description: "A practical, developer-friendly guide to openai o3: reasoning models and chain-of-thought with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/openai-o3-reasoning-models-chain-of-thought.webp"
 tags: [llm, ai-tools]
 ---
 

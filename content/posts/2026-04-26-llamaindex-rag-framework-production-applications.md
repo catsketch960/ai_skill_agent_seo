@@ -3,6 +3,7 @@ title: "LlamaIndex: RAG Framework for Production Applications"
 date: "2026-04-26"
 slug: "llamaindex-rag-framework-production-applications"
 description: "A practical, developer-friendly guide to llamaindex: rag framework for production applications with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/llamaindex-rag-framework-production-applications.webp"
 tags: [llm, ai-tools]
 ---
 

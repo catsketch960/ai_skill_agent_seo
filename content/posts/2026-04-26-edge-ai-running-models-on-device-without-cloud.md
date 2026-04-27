@@ -3,6 +3,7 @@ title: "Edge AI: Running Models on Device Without the Cloud"
 date: "2026-04-26"
 slug: "edge-ai-running-models-on-device-without-cloud"
 description: "A practical, developer-friendly guide to edge ai: running models on device without the cloud with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/edge-ai-running-models-on-device-without-cloud.webp"
 tags: [ai-tools]
 ---
 

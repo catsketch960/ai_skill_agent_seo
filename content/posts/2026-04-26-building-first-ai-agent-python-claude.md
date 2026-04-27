@@ -3,6 +3,7 @@ title: "Building Your First AI Agent with Python and Claude"
 date: "2026-04-26"
 slug: "building-first-ai-agent-python-claude"
 description: "A practical, developer-friendly guide to building your first ai agent with python and claude with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/building-first-ai-agent-python-claude.webp"
 tags: [ai-agents, ai-tools]
 ---
 

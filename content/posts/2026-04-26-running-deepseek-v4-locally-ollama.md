@@ -3,6 +3,7 @@ title: "Running DeepSeek V4 Locally with Ollama"
 date: "2026-04-26"
 slug: "running-deepseek-v4-locally-ollama"
 description: "A practical, developer-friendly guide to running deepseek v4 locally with ollama with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/running-deepseek-v4-locally-ollama.webp"
 tags: [deepseek, llm]
 ---
 

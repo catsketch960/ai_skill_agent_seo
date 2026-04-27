@@ -3,6 +3,7 @@ title: "Stable Diffusion XL: Local Image Generation Guide"
 date: "2026-04-26"
 slug: "stable-diffusion-xl-local-image-generation-guide"
 description: "A practical, developer-friendly guide to stable diffusion xl: local image generation guide with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/stable-diffusion-xl-local-image-generation-guide.webp"
 tags: [ai-tools]
 ---
 

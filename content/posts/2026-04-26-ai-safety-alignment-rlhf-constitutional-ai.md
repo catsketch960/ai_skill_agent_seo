@@ -3,6 +3,7 @@ title: "AI Safety: Alignment, RLHF, and Constitutional AI"
 date: "2026-04-26"
 slug: "ai-safety-alignment-rlhf-constitutional-ai"
 description: "A practical, developer-friendly guide to ai safety: alignment, rlhf, and constitutional ai with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/ai-safety-alignment-rlhf-constitutional-ai.webp"
 tags: [llm, ai-tools]
 ---
 

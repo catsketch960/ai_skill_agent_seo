@@ -3,6 +3,7 @@ title: "Claude for Enterprise: Safety, Privacy, and Scale"
 date: "2026-04-26"
 slug: "claude-enterprise-safety-privacy-scale"
 description: "A practical, developer-friendly guide to claude for enterprise: safety, privacy, and scale with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/claude-enterprise-safety-privacy-scale.webp"
 tags: [claude, llm]
 ---
 

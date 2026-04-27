@@ -3,6 +3,7 @@ title: "AI Agents vs Workflows: When to Use Each"
 date: "2026-04-26"
 slug: "ai-agents-vs-workflows-when-to-use-each"
 description: "A practical, developer-friendly guide to ai agents vs workflows: when to use each with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/ai-agents-vs-workflows-when-to-use-each.webp"
 tags: [ai-agents, ai-tools]
 ---
 

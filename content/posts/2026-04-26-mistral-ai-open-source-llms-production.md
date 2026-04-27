@@ -3,6 +3,7 @@ title: "Mistral AI: Open-Source LLMs for Production"
 date: "2026-04-26"
 slug: "mistral-ai-open-source-llms-production"
 description: "A practical, developer-friendly guide to mistral ai: open-source llms for production with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/mistral-ai-open-source-llms-production.webp"
 tags: [llm, ai-tools]
 ---
 

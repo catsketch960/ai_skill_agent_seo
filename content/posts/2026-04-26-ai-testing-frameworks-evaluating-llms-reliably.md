@@ -3,6 +3,7 @@ title: "AI Testing Frameworks: Evaluating LLMs Reliably"
 date: "2026-04-26"
 slug: "ai-testing-frameworks-evaluating-llms-reliably"
 description: "A practical, developer-friendly guide to ai testing frameworks: evaluating llms reliably with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/ai-testing-frameworks-evaluating-llms-reliably.webp"
 tags: [llm, ai-tools]
 ---
 

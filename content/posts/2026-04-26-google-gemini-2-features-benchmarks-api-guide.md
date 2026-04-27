@@ -3,6 +3,7 @@ title: "Google Gemini 2.0: Features, Benchmarks, and API Guide"
 date: "2026-04-26"
 slug: "google-gemini-2-features-benchmarks-api-guide"
 description: "A practical, developer-friendly guide to google gemini 2.0: features, benchmarks, and api guide with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/google-gemini-2-features-benchmarks-api-guide.webp"
 tags: [llm, ai-tools]
 ---
 

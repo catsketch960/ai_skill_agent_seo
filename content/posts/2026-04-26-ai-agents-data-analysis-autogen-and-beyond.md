@@ -3,6 +3,7 @@ title: "AI Agents for Data Analysis: AutoGen and Beyond"
 date: "2026-04-26"
 slug: "ai-agents-data-analysis-autogen-and-beyond"
 description: "A practical, developer-friendly guide to ai agents for data analysis: autogen and beyond with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/ai-agents-data-analysis-autogen-and-beyond.webp"
 tags: [ai-agents, ai-tools]
 ---
 

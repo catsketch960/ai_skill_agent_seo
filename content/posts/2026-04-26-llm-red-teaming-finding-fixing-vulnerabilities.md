@@ -3,6 +3,7 @@ title: "LLM Red Teaming: Finding and Fixing Vulnerabilities"
 date: "2026-04-26"
 slug: "llm-red-teaming-finding-fixing-vulnerabilities"
 description: "A practical, developer-friendly guide to llm red teaming: finding and fixing vulnerabilities with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/llm-red-teaming-finding-fixing-vulnerabilities.webp"
 tags: [llm, ai-tools]
 ---
 

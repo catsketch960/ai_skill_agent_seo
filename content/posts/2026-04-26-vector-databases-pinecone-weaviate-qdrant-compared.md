@@ -3,6 +3,7 @@ title: "Vector Databases: Pinecone, Weaviate, and Qdrant Compared"
 date: "2026-04-26"
 slug: "vector-databases-pinecone-weaviate-qdrant-compared"
 description: "A practical, developer-friendly guide to vector databases: pinecone, weaviate, and qdrant compared with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/vector-databases-pinecone-weaviate-qdrant-compared.webp"
 tags: [llm, ai-tools]
 ---
 

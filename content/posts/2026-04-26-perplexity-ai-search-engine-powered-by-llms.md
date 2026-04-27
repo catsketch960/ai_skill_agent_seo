@@ -3,6 +3,7 @@ title: "Perplexity AI: The Search Engine Powered by LLMs"
 date: "2026-04-26"
 slug: "perplexity-ai-search-engine-powered-by-llms"
 description: "A practical, developer-friendly guide to perplexity ai: the search engine powered by llms with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/perplexity-ai-search-engine-powered-by-llms.webp"
 tags: [llm, ai-tools]
 ---
 

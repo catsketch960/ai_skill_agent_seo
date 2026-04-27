@@ -3,6 +3,7 @@ title: "Mixtral: Mixture-of-Experts LLMs Explained"
 date: "2026-04-26"
 slug: "mixtral-mixture-of-experts-llms-explained"
 description: "A practical, developer-friendly guide to mixtral: mixture-of-experts llms explained with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/mixtral-mixture-of-experts-llms-explained.webp"
 tags: [llm, ai-tools]
 ---
 

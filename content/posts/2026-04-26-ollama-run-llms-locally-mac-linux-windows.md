@@ -3,6 +3,7 @@ title: "Ollama: Run LLMs Locally on Mac, Linux, and Windows"
 date: "2026-04-26"
 slug: "ollama-run-llms-locally-mac-linux-windows"
 description: "A practical, developer-friendly guide to ollama: run llms locally on mac, linux, and windows with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/ollama-run-llms-locally-mac-linux-windows.webp"
 tags: [llm, ai-tools]
 ---
 

@@ -3,6 +3,7 @@ title: "AI Agent Memory: Short-Term, Long-Term, and Episodic"
 date: "2026-04-26"
 slug: "ai-agent-memory-short-term-long-term-episodic"
 description: "A practical, developer-friendly guide to ai agent memory: short-term, long-term, and episodic with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/ai-agent-memory-short-term-long-term-episodic.webp"
 tags: [ai-agents, ai-tools]
 ---
 

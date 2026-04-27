@@ -3,6 +3,7 @@ title: "CrewAI: Multi-Agent Collaboration Made Easy"
 date: "2026-04-26"
 slug: "crewai-multi-agent-collaboration-made-easy"
 description: "A practical, developer-friendly guide to crewai: multi-agent collaboration made easy with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/crewai-multi-agent-collaboration-made-easy.webp"
 tags: [ai-agents, ai-tools]
 ---
 

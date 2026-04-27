@@ -3,6 +3,7 @@ title: "Phi-3 Mini: Microsoft's Small but Mighty LLM"
 date: "2026-04-26"
 slug: "phi-3-mini-microsoft-small-but-mighty-llm"
 description: "A practical, developer-friendly guide to phi-3 mini: microsoft's small but mighty llm with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/phi-3-mini-microsoft-small-but-mighty-llm.webp"
 tags: [llm, ai-tools]
 ---
 

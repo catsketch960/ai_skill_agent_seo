@@ -3,6 +3,7 @@ title: "AI Hallucinations: Causes, Detection, and Mitigation"
 date: "2026-04-26"
 slug: "ai-hallucinations-causes-detection-mitigation"
 description: "A practical, developer-friendly guide to ai hallucinations: causes, detection, and mitigation with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/ai-hallucinations-causes-detection-mitigation.webp"
 tags: [llm, ai-tools]
 ---
 

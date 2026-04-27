@@ -3,6 +3,7 @@ title: "Midjourney v7: AI Image Generation for Professionals"
 date: "2026-04-26"
 slug: "midjourney-v7-ai-image-generation-professionals"
 description: "A practical, developer-friendly guide to midjourney v7: ai image generation for professionals with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/midjourney-v7-ai-image-generation-professionals.webp"
 tags: [ai-tools]
 ---
 

@@ -3,6 +3,7 @@ title: "Anthropic Claude 3.7: Sonnet and Opus Deep Dive"
 date: "2026-04-26"
 slug: "anthropic-claude-3-7-sonnet-opus-deep-dive"
 description: "A practical, developer-friendly guide to anthropic claude 3.7: sonnet and opus deep dive with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/anthropic-claude-3-7-sonnet-opus-deep-dive.webp"
 tags: [claude, llm]
 ---
 

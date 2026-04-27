@@ -3,6 +3,7 @@ title: "Claude Prompt Engineering: Tips for Better Results"
 date: "2026-04-26"
 slug: "claude-prompt-engineering-tips-better-results"
 description: "A practical, developer-friendly guide to claude prompt engineering: tips for better results with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/claude-prompt-engineering-tips-better-results.webp"
 tags: [claude, llm]
 ---
 

@@ -3,6 +3,7 @@ title: "Anthropic's Constitutional AI: How Claude Stays Safe"
 date: "2026-04-26"
 slug: "anthropic-constitutional-ai-how-claude-stays-safe"
 description: "A practical, developer-friendly guide to anthropic's constitutional ai: how claude stays safe with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/anthropic-constitutional-ai-how-claude-stays-safe.webp"
 tags: [claude, llm]
 ---
 

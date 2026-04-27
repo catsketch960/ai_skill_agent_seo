@@ -3,6 +3,7 @@ title: "Harness Feature Flags: AI-Powered Release Management"
 date: "2026-04-26"
 slug: "harness-feature-flags-ai-powered-release-management"
 description: "A practical, developer-friendly guide to harness feature flags: ai-powered release management with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/harness-feature-flags-ai-powered-release-management.webp"
 tags: [harness, ai-tools]
 ---
 

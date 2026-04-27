@@ -3,6 +3,7 @@ title: "Structured Outputs from LLMs: JSON Mode and Beyond"
 date: "2026-04-26"
 slug: "structured-outputs-llms-json-mode-and-beyond"
 description: "A practical, developer-friendly guide to structured outputs from llms: json mode and beyond with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/structured-outputs-llms-json-mode-and-beyond.webp"
 tags: [llm, ai-tools]
 ---
 

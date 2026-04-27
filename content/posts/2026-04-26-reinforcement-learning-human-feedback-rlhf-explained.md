@@ -3,6 +3,7 @@ title: "Reinforcement Learning from Human Feedback (RLHF) Explained"
 date: "2026-04-26"
 slug: "reinforcement-learning-human-feedback-rlhf-explained"
 description: "A practical, developer-friendly guide to reinforcement learning from human feedback (rlhf) explained with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/reinforcement-learning-human-feedback-rlhf-explained.webp"
 tags: [llm, ai-tools]
 ---
 

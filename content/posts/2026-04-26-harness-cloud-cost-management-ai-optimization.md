@@ -3,6 +3,7 @@ title: "Harness Cloud Cost Management with AI Optimization"
 date: "2026-04-26"
 slug: "harness-cloud-cost-management-ai-optimization"
 description: "A practical, developer-friendly guide to harness cloud cost management with ai optimization with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/harness-cloud-cost-management-ai-optimization.webp"
 tags: [harness, ai-tools]
 ---
 

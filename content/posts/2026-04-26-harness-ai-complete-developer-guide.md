@@ -3,6 +3,7 @@ title: "Harness AI: The Complete Developer Guide"
 date: "2026-04-26"
 slug: "harness-ai-complete-developer-guide"
 description: "A practical, developer-friendly guide to harness ai: the complete developer guide with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/harness-ai-complete-developer-guide.webp"
 tags: [harness, ai-tools]
 ---
 

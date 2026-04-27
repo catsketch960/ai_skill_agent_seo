@@ -3,6 +3,7 @@ title: "LLM Evaluation: Benchmarks, Metrics, and Best Practices"
 date: "2026-04-26"
 slug: "llm-evaluation-benchmarks-metrics-best-practices"
 description: "A practical, developer-friendly guide to llm evaluation: benchmarks, metrics, and best practices with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/llm-evaluation-benchmarks-metrics-best-practices.webp"
 tags: [llm, ai-tools]
 ---
 

@@ -3,6 +3,7 @@ title: "Distributed LLM Inference: Scaling Beyond One GPU"
 date: "2026-04-26"
 slug: "distributed-llm-inference-scaling-beyond-one-gpu"
 description: "A practical, developer-friendly guide to distributed llm inference: scaling beyond one gpu with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/distributed-llm-inference-scaling-beyond-one-gpu.webp"
 tags: [llm, ai-tools]
 ---
 

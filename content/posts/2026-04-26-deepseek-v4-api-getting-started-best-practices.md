@@ -3,6 +3,7 @@ title: "DeepSeek V4 API: Getting Started and Best Practices"
 date: "2026-04-26"
 slug: "deepseek-v4-api-getting-started-best-practices"
 description: "A practical, developer-friendly guide to deepseek v4 api: getting started and best practices with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/deepseek-v4-api-getting-started-best-practices.webp"
 tags: [deepseek, llm]
 ---
 

@@ -3,6 +3,7 @@ title: "Knowledge Graphs and LLMs: A Powerful Combination"
 date: "2026-04-26"
 slug: "knowledge-graphs-and-llms-powerful-combination"
 description: "A practical, developer-friendly guide to knowledge graphs and llms: a powerful combination with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/knowledge-graphs-and-llms-powerful-combination.webp"
 tags: [llm, ai-tools]
 ---
 

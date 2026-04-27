@@ -3,6 +3,7 @@ title: "Fine-Tuning LLMs: When to Do It and How"
 date: "2026-04-26"
 slug: "fine-tuning-llms-when-to-do-it-and-how"
 description: "A practical, developer-friendly guide to fine-tuning llms: when to do it and how with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/fine-tuning-llms-when-to-do-it-and-how.webp"
 tags: [llm, ai-tools]
 ---
 

@@ -3,6 +3,7 @@ title: "Claude Code: AI-Powered Coding in the Terminal"
 date: "2026-04-26"
 slug: "claude-code-ai-powered-coding-terminal"
 description: "A practical, developer-friendly guide to claude code: ai-powered coding in the terminal with architecture, evaluation, rollout advice, and FAQ."
+heroImage: "/images/heroes/claude-code-ai-powered-coding-terminal.webp"
 tags: [claude, llm]
 ---
 
