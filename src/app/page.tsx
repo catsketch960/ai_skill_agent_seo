@@ -15,7 +15,7 @@ export default function HomePage() {
       <AdUnit
         slot="homepage-leaderboard"
         format="rectangle"
-        className="h-[100px] mb-8 mx-auto w-full max-w-4xl"
+        className="h-[50px] mb-8 w-full"
       />
 
       <SectionHeader title="Latest Articles" />
