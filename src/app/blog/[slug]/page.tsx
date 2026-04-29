@@ -1,12 +1,11 @@
 import { notFound } from 'next/navigation'
 import { getAllPosts, getPostBySlug, getPostsByTag } from '@/lib/posts'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import Image from 'next/image'
 import Link from 'next/link'
 import TagPill from '@/components/TagPill'
 import AdUnit from '@/components/AdUnit'
 import Sidebar from '@/components/Sidebar'
+import MarkdownContent from '@/components/MarkdownContent'
 import type { Metadata } from 'next'
 
 interface Props {
@@ -75,13 +74,6 @@ export default async function ArticlePage({ params }: Props) {
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-8 items-start">
         {/* Main article */}
         <article className="bg-white rounded-2xl shadow-card p-8 min-w-0">
-          {/* Hero image */}
-          {post.heroImage && (
-            <div className="relative w-full h-52 rounded-xl overflow-hidden mb-6">
-              <Image src={post.heroImage} alt={post.title} fill className="object-cover" sizes="100vw" priority />
-            </div>
-          )}
-
           {/* Tags */}
           <div className="flex flex-wrap gap-2 mb-4">
             {post.tags.map(tag => <TagPill key={tag} tag={tag} />)}
@@ -104,7 +96,7 @@ export default async function ArticlePage({ params }: Props) {
 
           {/* Article top half */}
           <div className="prose prose-gray max-w-none prose-headings:text-heading prose-headings:font-bold prose-a:text-indigo-600">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{topHalf}</ReactMarkdown>
+            <MarkdownContent>{topHalf}</MarkdownContent>
           </div>
 
           {/* Mid ad */}
@@ -112,7 +104,7 @@ export default async function ArticlePage({ params }: Props) {
 
           {/* Article bottom half */}
           <div className="prose prose-gray max-w-none prose-headings:text-heading prose-headings:font-bold prose-a:text-indigo-600">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{bottomHalf}</ReactMarkdown>
+            <MarkdownContent>{bottomHalf}</MarkdownContent>
           </div>
         </article>
 

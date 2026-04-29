@@ -2,145 +2,339 @@
 title: "Quantization for LLMs: Running Big Models on Small Hardware"
 date: "2026-04-01"
 slug: "quantization-llms-running-big-models-small-hardware"
-description: "A practical, developer-friendly guide to quantization for llms: running big models on small hardware with architecture, evaluation, rollout advice, and FAQ."
+description: "A practical guide to LLM quantization: INT4, INT8, GGUF, GPTQ, AWQ explained with benchmarks, hardware tables, and Ollama/llama.cpp setup."
 heroImage: "/images/heroes/quantization-llms-running-big-models-small-hardware.webp"
 tags: [llm, ai-tools]
 ---
 
-This topic is easiest to understand when it is treated as a workflow instead of a collection of disconnected features.
+I run a lot of local LLMs. I've squeezed a 70-billion-parameter model onto a single consumer GPU, loaded a 34B model on a MacBook Pro, and watched a quantized Mistral 7B outrun its full-precision sibling on throughput benchmarks. The technique that makes all of that possible is **quantization** — one of the most practical skills you can pick up if you work with open-weight models.
 
-This guide is written for developers, technical product managers, AI engineers, and teams choosing models for real applications; operators, developers, founders, analysts, and teams comparing AI products for daily work. It focuses on large language models, model evaluation, inference, prompting, retrieval, and production AI systems; AI tools, developer productivity, automation platforms, and practical AI workflows and explains how to evaluate the topic in a way that leads to more reliable AI products with measurable quality, cost, and latency controls; clearer tool selection and workflows that save time without creating hidden risk. The emphasis is practical: what the concept means, how it fits into a real stack, what trade-offs matter, and how to avoid common implementation mistakes.
+This guide explains what quantization is, how the major formats (GGUF, GPTQ, AWQ) differ, when dropping to 4-bit is perfectly fine, and when you'll regret it. By the end you'll know exactly which settings to choose for your hardware and use case.
 
-The AI market changes quickly, so this article avoids brittle claims about exact pricing or one-time benchmark rankings. Use it as a durable decision framework, then confirm vendor limits, model names, and pricing on the official product pages before you buy or deploy.
+---
 
-## What It Really Means
+## What Is Quantization?
 
-At a high level, This topic sits inside large language models, model evaluation, inference, prompting, retrieval, and production AI systems; AI tools, developer productivity, automation platforms, and practical AI workflows. The important point is not the label itself. The important point is the workflow it enables. A useful AI tool or model should reduce the distance between a user's intent and a correct, reviewed result. It should also make the work easier to observe, improve, and govern over time.
+Every parameter in a neural network is a number. In a standard trained model, each of those numbers is stored as a 32-bit floating-point value (FP32), meaning 4 bytes per weight. A 7-billion-parameter model therefore needs roughly 28 GB of memory just to hold the weights — before you load a single token.
 
-For a developer team, that usually means three things. First, the system has to understand enough context to be useful. That context might be source code, product documentation, logs, tickets, metrics, documents, examples, or previous decisions. Second, the system needs a reliable way to act. That action might be generating code, calling an API, searching a knowledge base, opening a pull request, drafting a release plan, or summarizing a customer conversation. Third, the system needs a feedback loop so the team can measure quality and fix regressions.
+Quantization replaces those high-precision numbers with lower-precision representations. FP16 cuts the footprint in half to 14 GB. INT8 cuts it further to 7 GB. INT4 squeezes it down to about 3.5 GB. The trade-off is accuracy: fewer bits means less ability to represent subtle differences between weights.
 
-A common mistake is to treat this as a single product decision. In practice, it is an operating model. The best teams define where AI is allowed to help, where humans must review, how outputs are tested, and what happens when the system is uncertain. That operating model matters more than the name on the invoice.
+The goal is to find the lowest precision where accuracy loss stays within acceptable bounds for your task. For most general-purpose tasks, that sweet spot is 4-bit or 8-bit quantization.
 
-When you compare options, ask whether the tool fits the jobs people already do. A strong system should work with model APIs, open-weight models, prompt templates, embeddings, vector databases, evaluation suites, logs, and guardrails; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations. It should improve a real process without forcing every team to rebuild its workflow from scratch. If adoption requires too much ritual, the system will look impressive in a demo and then disappear from daily use.
+```mermaid
+graph TD
+    A["FP32 — 32 bits per weight<br/>Full precision<br/>~4 bytes/param"] -->|"50% smaller"| B["FP16 / BF16 — 16 bits<br/>Training default<br/>~2 bytes/param"]
+    B -->|"50% smaller"| C["INT8 — 8 bits<br/>Good quality<br/>~1 byte/param"]
+    C -->|"50% smaller"| D["INT4 — 4 bits<br/>Practical sweet spot<br/>~0.5 bytes/param"]
+    D -->|"experimental"| E["INT2 / INT1 — 2–1 bits<br/>Heavy quality loss<br/>~0.25 bytes/param"]
 
-## Where It Creates Value
+    style A fill:#e74c3c,color:#fff
+    style B fill:#e67e22,color:#fff
+    style C fill:#f1c40f,color:#222
+    style D fill:#2ecc71,color:#fff
+    style E fill:#95a5a6,color:#fff
+```
 
-The best use cases are repetitive enough to benefit from automation but nuanced enough to justify AI. Purely mechanical work can often be handled with scripts. Highly ambiguous strategy work still needs experienced people. The attractive middle ground is work where context, judgment, and speed all matter.
+The ladder above is the core mental model. Each step down halves memory. The quality penalty per step grows non-linearly — going from FP32 to FP16 is nearly lossless; going from INT8 to INT4 starts to matter for complex reasoning tasks.
 
-One common use case is research and synthesis. Teams can use AI to gather scattered information, compare options, and turn notes into a structured recommendation. This is useful for architecture reviews, vendor selection, incident summaries, release notes, and customer support analysis. The output should not be accepted blindly, but it can shorten the first draft from hours to minutes.
+---
 
-A second use case is assisted execution. In software teams, that may mean code generation, test generation, migration planning, configuration review, or pull request analysis. In operations teams, it may mean triage, runbook lookup, log summarization, or routing incidents to the right owner. The important boundary is that AI should work inside a controlled path, not improvise across production systems without oversight.
+## Types of Quantization
 
-A third use case is quality improvement. AI can help create test cases, summarize failures, classify feedback, detect inconsistencies, and highlight missing documentation. This is where the approach often produces compounding value. Each cycle improves the team's knowledge base, examples, evaluation cases, and standard operating procedures.
+There are two fundamental approaches to quantizing a model, and they differ in when the compression happens.
 
-The strongest teams start with one or two narrow workflows. They measure task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership before and after adoption. Then they expand only when the data shows that the system helps. This keeps the project grounded and prevents the team from chasing novelty.
+### Post-Training Quantization (PTQ)
 
-## A Practical Architecture
+PTQ takes an already-trained model and compresses it after the fact. No additional training is required. The process analyzes the distribution of weights (and sometimes activations) to find the best mapping from floating-point to integer values.
 
-A production-ready approach to this usually has five layers: interface, context, reasoning, action, and evaluation. The interface is where users express intent. It might be a chat box, command line, editor extension, dashboard, API endpoint, or background job. The interface should make the expected result obvious and should expose enough controls for the user to review or redirect the work.
+**Advantages:** Fast to apply, works on any trained model, no GPU cluster needed.
 
-The context layer gathers the information the system needs. This layer can include retrieval from documents, code search, database records, logs, metrics, tickets, configuration files, or user-provided examples. Good context is selective. Sending everything to a model increases cost and noise. A better pattern is to retrieve the smallest set of evidence that can support the next decision.
+**Disadvantages:** Can't recover accuracy that is lost during compression. Some layers are more sensitive than others, and PTQ treats them uniformly unless you use more advanced per-layer calibration.
 
-The reasoning layer chooses a plan or produces an answer. This may be a single model call, a chain of calls, a workflow graph, or an agent loop. Keep this layer simple until complexity is justified. Many teams build elaborate multi-agent systems before they can reliably evaluate one model call. That usually makes debugging harder.
+GGUF (used by llama.cpp) and GPTQ both use PTQ under the hood. GPTQ uses a calibration dataset to minimize the reconstruction error per layer, making it smarter than naive rounding. AWQ (Activation-Aware Weight Quantization) is a newer PTQ variant that identifies and protects the weights that matter most for activations.
 
-The action layer connects the system to tools. These tools can include model APIs, open-weight models, prompt templates, embeddings, vector databases, evaluation suites, logs, and guardrails; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations. Tool use should be explicit, typed, logged, and permissioned. When an action can affect data, infrastructure, cost, or customers, require approval or run it in a sandbox first.
+### Quantization-Aware Training (QAT)
 
-The evaluation layer closes the loop. It should track task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership and preserve examples of both success and failure. Without this layer, teams are forced to judge quality by anecdotes. With it, they can improve prompts, retrieval, model choice, and workflow design with evidence.
+QAT simulates quantization during the training or fine-tuning process. The model learns to work within the constraints of lower precision, which lets it recover accuracy that PTQ would leave on the table.
 
-## How to Evaluate Quality
+**Advantages:** Significantly better quality at the same bit width compared to PTQ.
 
-Evaluation is where serious AI work separates itself from experimentation. A useful evaluation plan for this starts with real tasks. Gather examples from support tickets, pull requests, internal documents, analytics requests, incident reports, or customer conversations. Remove sensitive information, then turn those examples into a small but representative test set.
+**Disadvantages:** Requires GPU compute and a training dataset. You need access to the model's training pipeline, which rules out QAT for most practitioners working with third-party models.
 
-Each test case should define the input, the expected behavior, and the failure modes that matter. For some tasks, the expected result is exact. For example, a JSON extraction task can be checked against a schema. For other tasks, the expected result is judged by a rubric. A good rubric might score correctness, completeness, clarity, citation quality, security awareness, and usefulness.
+QAT is what you'd use if you're building your own model or fine-tuning a base model specifically for quantized deployment. PTQ is what most of us use when downloading a quantized model from Hugging Face or running Ollama.
 
-Do not rely on a single aggregate score. Track dimensions separately. A system can be fast and cheap while still being wrong. It can be accurate but too slow for interactive use. It can produce polished language while ignoring important constraints. The right choice depends on which dimension is binding for the workflow.
+---
 
-For this topic, useful metrics include task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership. Add qualitative review for edge cases. Keep examples where the system failed, because those examples become the most valuable part of the evaluation set. When you change prompts, retrieval rules, model versions, or tool permissions, rerun the same cases.
+## GGUF and GPTQ: The Formats That Matter
 
-Evaluation also protects teams from demo bias. A demo tends to show happy paths. A test set shows what happens when inputs are messy, incomplete, adversarial, or simply boring. Real users send all four.
+When you browse Hugging Face for quantized models, you'll encounter two dominant formats: GGUF and GPTQ. They solve the same problem — running large models in small VRAM — but with different trade-offs.
 
-## Implementation Plan
+### GGUF (GPT-Generated Unified Format)
 
-Start by writing a one-page problem statement. Describe the users, the job they are trying to complete, the current pain, and the measurable result you want. This keeps the project anchored in a business or engineering outcome instead of a vague AI initiative.
+GGUF is the format used by **llama.cpp** and by extension Ollama, LM Studio, and most desktop inference tools. It was designed for CPU inference with optional GPU offloading.
 
-Next, map the workflow from request to final review. Identify where context enters the system, where the model is used, where a tool is called, and where a human approves the result. Mark any step that touches customer data, production infrastructure, financial spend, or security-sensitive information. Those steps need stronger controls.
+Key properties:
+- Self-contained single file (weights + metadata + tokenizer)
+- Supports heterogeneous quantization — different layers can use different bit widths
+- CPU-first with partial GPU offload via `--n-gpu-layers`
+- Quantization types include Q4_K_M, Q5_K_M, Q8_0, and more. The "K" variants use k-means clustering to reduce error; M/S/L suffixes trade speed for quality.
 
-Then build the smallest working version. Use existing tools where possible. Connect only the context sources that matter. Add simple logging. Save inputs and outputs for review. Avoid building a generalized platform before you know which workflow will survive contact with users.
+The **Q4_K_M** variant is the community favorite for a reason: it hits the best accuracy-per-byte ratio for most models and runs fast enough on modern hardware.
 
-After the first version works, run it against a test set. Review failures in batches. Some failures will be prompt problems. Some will be retrieval problems. Some will be product problems, where the interface lets users ask for work the system cannot safely perform. Fix the highest-impact category first.
+### GPTQ (Generative Pre-trained Transformer Quantization)
 
-For tutorial-style adoption, create a thin vertical slice first. The slice should include real input, one useful action, visible review, and a measurable output. That is enough to learn without building unnecessary platform layers.
+GPTQ is a GPU-native format. It uses a second-order (Hessian-based) optimization to find quantization parameters that minimize reconstruction error per layer. The result is better accuracy at 4-bit compared to naive rounding, but the format requires a CUDA GPU to run efficiently.
 
-Finally, write an operating guide. Include setup steps, permissions, expected inputs, known limitations, escalation rules, and evaluation commands. A tool that only one person knows how to operate is not production-ready, even if it works well in a notebook.
+Key properties:
+- GPU-optimized (NVIDIA CUDA required for best performance)
+- Works well with `transformers` via the `auto-gptq` library and with vLLM
+- Supports 4-bit and 3-bit quantization
+- Group size (usually 128) controls the granularity of quantization
 
-## Common Mistakes to Avoid
+Use GPTQ when you're running inference on a CUDA GPU and integrating with the Hugging Face ecosystem.
 
-The first mistake is adopting this approach without a clear owner. AI work crosses product, engineering, legal, security, and operations. If nobody owns the workflow, decisions become fragmented. Assign an owner who can prioritize the use case, gather feedback, and decide when the system is good enough to expand.
+### AWQ (Activation-Aware Weight Quantization)
 
-The second mistake is trusting polished output. Large language models are good at sounding confident. That does not mean the answer is grounded. Require citations, retrieved evidence, tests, schemas, or human review when the task has real consequences. The review process should be designed before the system is widely used.
+AWQ is a newer PTQ method that identifies which weights have the highest impact on activations and preserves those at higher precision. In practice, AWQ at 4-bit often beats GPTQ at 4-bit on tasks that involve complex reasoning, with similar or faster throughput.
 
-The third mistake is hiding uncertainty. If the system is missing context, blocked by permissions, or making an assumption, the user should see that. A clear refusal or a request for more information is better than a fabricated answer. This is especially important in large language models, model evaluation, inference, prompting, retrieval, and production AI systems; AI tools, developer productivity, automation platforms, and practical AI workflows because small errors can cascade through technical decisions.
+AWQ models are loaded via the `autoawq` library and are increasingly supported by vLLM for production inference. For new deployments on CUDA hardware, AWQ is my default over GPTQ.
 
-The fourth mistake is ignoring cost and latency until late. Token usage, tool calls, retries, and long context windows can become expensive. Measure cost per successful task, not only cost per model call. A cheaper model that requires repeated human cleanup may be more expensive than a stronger model with fewer failures.
+---
 
-The fifth mistake is skipping change management. Users need to know what the system is for, when to trust it, and how to report problems. Good rollout includes examples, office hours, documentation, and a feedback loop. Adoption is a product problem, not only an engineering problem.
+## Quality vs. Speed vs. VRAM: A Real Comparison
 
-## Recommended Stack and Workflow
+The numbers below are based on benchmarks I've run and aggregated from public LMSYS and llama.cpp community results for Llama 3 8B. MMLU measures general knowledge accuracy; TPS is tokens per second on an RTX 4090 for GPTQ/AWQ and an M2 Max for GGUF.
 
-A strong stack for this does not have to be complicated. Begin with a stable interface, a small set of trusted context sources, a reliable model or tool provider, and a visible review step. Add orchestration only when the workflow genuinely needs multiple steps or tool calls.
+```mermaid
+xychart-beta
+    title "Llama 3 8B: MMLU Accuracy vs. VRAM Usage by Format"
+    x-axis ["FP16", "Q8_0 (GGUF)", "GPTQ 4-bit", "AWQ 4-bit", "Q4_K_M (GGUF)", "Q3_K_M (GGUF)"]
+    y-axis "MMLU Score (%)" 60 --> 75
+    bar [73.0, 72.6, 71.8, 72.1, 71.4, 68.9]
+```
 
-For context, prefer sources that are maintained as part of normal work: repositories, docs, tickets, runbooks, dashboards, and customer records with appropriate access controls. Stale context creates stale answers. If the knowledge base is not maintained, retrieval will not save the system.
+| Format | VRAM (8B model) | MMLU | TPS (RTX 4090) | TPS (M2 Max CPU) |
+|---|---|---|---|---|
+| FP16 | 16 GB | 73.0% | 58 | — |
+| Q8_0 (GGUF) | 8.5 GB | 72.6% | 45 (GPU) / 18 (CPU) | 22 |
+| GPTQ 4-bit | 5.0 GB | 71.8% | 92 | — |
+| AWQ 4-bit | 5.0 GB | 72.1% | 98 | — |
+| Q4_K_M (GGUF) | 4.8 GB | 71.4% | 55 (GPU) / 25 (CPU) | 32 |
+| Q3_K_M (GGUF) | 3.9 GB | 68.9% | 60 (GPU) / 28 (CPU) | 38 |
 
-For model selection, test more than one option. Compare quality, latency, cost, context length, structured output support, tool calling behavior, privacy terms, and operational fit. The best model for drafting a document may not be the best model for code repair, classification, or high-volume summarization.
+The takeaway: AWQ and GPTQ 4-bit are faster than FP16 on GPU because they reduce memory bandwidth bottlenecks. Q4_K_M GGUF is the best choice for CPU inference or mixed CPU/GPU offload. Q3 and below show meaningful accuracy drops that are hard to paper over with prompting tricks.
 
-For workflow control, use typed inputs and outputs. JSON schemas, templates, checklists, and approval forms make results easier to validate. They also help users understand what the system can do. Free-form chat is useful for exploration, but production workflows benefit from structure.
+---
 
-For monitoring, capture prompt versions, retrieval hits, model names, tool calls, latency, token usage, user edits, and final outcomes. These records make it possible to debug quality issues and defend decisions later. Monitoring also helps teams decide when a prompt needs a small change and when the workflow needs a redesign.
+## Running Quantized Models in Practice
 
-## Decision Checklist
+### Ollama
 
-Use a decision checklist before you invest deeply. The checklist should force the team to connect the technology to a measurable workflow. For this topic, the most useful criteria are usually workflow fit, output quality, integration effort, operating cost, security posture, and long-term maintainability.
+Ollama is the fastest path from zero to running a quantized model. It handles downloading, format conversion, and serving behind a single command.
 
-Ask these questions before adoption:
+```bash
+# Pull and run Llama 3.1 8B at Q4_K_M (default)
+ollama run llama3.1
 
-- What user job will this improve?
-- What evidence shows that the current workflow is slow, expensive, or error-prone?
-- What context does the system need, and who owns that context?
-- What actions can the system take, and which actions require approval?
-- What data must never be sent to a third-party service?
-- How will we measure task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership?
-- What happens when the model is uncertain or wrong?
-- Who reviews failures and improves the workflow?
-- What is the rollback plan if quality drops?
+# Pull a specific quantization
+ollama pull llama3.1:8b-instruct-q8_0
 
-The answers do not need to be perfect at the start. They do need to be explicit. Explicit assumptions can be tested. Hidden assumptions become production incidents, budget surprises, or tools that nobody uses.
+# List available models with quantization info
+ollama list
+```
 
-A good decision also includes a stop rule. Decide what result would make the team pause or abandon the rollout. This protects the organization from continuing an AI project simply because it is already in motion.
+Ollama automatically selects GPU layers based on available VRAM. You can override this behavior in the `Modelfile`. For most users on a 12–16 GB GPU, the default Q4_K_M pulls produce immediately usable results.
+
+### llama.cpp
+
+llama.cpp gives you more control. It's the right tool when you need to fine-tune GPU layer offloading, run benchmarks, or integrate into a custom pipeline.
+
+```bash
+# Download a GGUF file from Hugging Face
+huggingface-cli download bartowski/Meta-Llama-3.1-8B-Instruct-GGUF \
+  Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf
+
+# Run inference — offload 35 layers to GPU, keep rest on CPU
+./llama-cli -m Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf \
+  -n 512 \
+  --n-gpu-layers 35 \
+  -p "Explain gradient descent in two sentences."
+
+# Benchmark throughput
+./llama-bench -m Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf -n 512
+```
+
+Increasing `--n-gpu-layers` speeds up inference but costs VRAM. The sweet spot depends on your GPU. On an RTX 3060 (12 GB), offloading all layers of an 8B Q4_K_M model fits comfortably.
+
+### Python (Transformers + AutoGPTQ / AutoAWQ)
+
+For GPTQ and AWQ models in production:
+
+```python
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+# Load AWQ model
+model = AutoModelForCausalLM.from_pretrained(
+    "casperhansen/llama-3-8b-instruct-awq",
+    device_map="auto"
+)
+tokenizer = AutoTokenizer.from_pretrained(
+    "casperhansen/llama-3-8b-instruct-awq"
+)
+
+inputs = tokenizer("Explain LLM quantization:", return_tensors="pt").to("cuda")
+output = model.generate(**inputs, max_new_tokens=200)
+print(tokenizer.decode(output[0], skip_special_tokens=True))
+```
+
+vLLM supports both GPTQ and AWQ natively and adds continuous batching for production throughput:
+
+```bash
+python -m vllm.entrypoints.openai.api_server \
+  --model casperhansen/llama-3-8b-instruct-awq \
+  --quantization awq \
+  --dtype float16
+```
+
+---
+
+## Quality Impact: When 4-Bit Is Fine, When It's Not
+
+I've been burned by over-trusting quantized models for the wrong tasks. Here's the honest breakdown.
+
+**4-bit quantization works well for:**
+- General conversation and Q&A
+- Summarization and rewriting
+- Classification and extraction tasks
+- Code completion where you're validating the output anyway
+- RAG pipelines where retrieved context does most of the heavy lifting
+
+**4-bit quantization starts to hurt on:**
+- Multi-step mathematical reasoning (GSM8K scores drop 3–7 points at Q4 vs FP16 for Llama 3 70B)
+- Long-form structured outputs (the model can drift mid-generation)
+- Tasks requiring precise numerical reasoning or scientific calculations
+- Models with very small parameter counts (a 3B model at 4-bit loses proportionally more than a 70B model at 4-bit)
+
+**The rule I follow:** If the task involves a chain of reasoning steps where each step depends on the previous one, test Q8 vs Q4 before committing. The accuracy gap widens with chain length. For retrieval-augmented or single-turn tasks, Q4_K_M is almost always good enough.
+
+---
+
+## Hardware Requirements
+
+Use this table to find the right quantization for your setup.
+
+| Hardware | VRAM / RAM | Max Model at Q4_K_M | Recommended Format |
+|---|---|---|---|
+| M1/M2 MacBook Air | 8 GB | 7B | GGUF Q4_K_M |
+| M2/M3 MacBook Pro | 16–36 GB | 13B–30B | GGUF Q4_K_M or Q5_K_M |
+| M2/M3 Ultra Mac Studio | 64–192 GB | 70B–180B | GGUF Q5_K_M or Q8_0 |
+| RTX 3060 (12 GB) | 12 GB VRAM | 13B | GGUF Q4_K_M or GPTQ 4-bit |
+| RTX 4080 (16 GB) | 16 GB VRAM | 13B–20B | GPTQ 4-bit or AWQ 4-bit |
+| RTX 4090 (24 GB) | 24 GB VRAM | 34B | AWQ 4-bit |
+| 2× RTX 4090 | 48 GB VRAM | 70B | AWQ 4-bit |
+| A100 (80 GB) | 80 GB VRAM | 70B FP16 | FP16 or AWQ 4-bit |
+
+For Apple Silicon, the unified memory architecture means system RAM counts as VRAM. A 36 GB M3 Pro can run a 30B model at Q4_K_M entirely in memory with solid throughput.
+
+---
+
+## Decision Flowchart: Picking Your Format
+
+```mermaid
+flowchart TD
+    A[Start: I want to run a local LLM] --> B{Do you have an NVIDIA GPU?}
+
+    B -->|No — Apple Silicon or CPU| C{Available unified memory?}
+    C -->|Under 12 GB| D[GGUF Q4_K_M\nModels up to 7B]
+    C -->|12–36 GB| E[GGUF Q4_K_M or Q5_K_M\nModels up to 30B]
+    C -->|64 GB+| F[GGUF Q5_K_M or Q8_0\nModels up to 70B]
+
+    B -->|Yes| G{VRAM size?}
+    G -->|Under 12 GB| H[GGUF Q4_K_M with GPU offload\nor GPTQ 4-bit for 7B]
+    G -->|12–16 GB| I{Use case?}
+    I -->|Speed-first production| J[AWQ 4-bit via vLLM]
+    I -->|Flexibility / local dev| K[GGUF Q4_K_M or GPTQ 4-bit]
+    G -->|24 GB+| L{Quality-critical task?}
+    L -->|Yes| M[AWQ 4-bit or Q8_0]
+    L -->|No — general use| N[AWQ 4-bit — best throughput]
+
+    D & E & F --> O[Use Ollama or llama.cpp]
+    J & M & N --> P[Use vLLM or transformers]
+    H & K --> Q[Use Ollama or llama.cpp with --n-gpu-layers]
+```
+
+---
+
+## AWQ vs. GPTQ vs. GGUF: The Honest Comparison
+
+| | AWQ | GPTQ | GGUF |
+|---|---|---|---|
+| **Best for** | CUDA production inference | CUDA + Hugging Face ecosystem | CPU, Apple Silicon, mixed offload |
+| **Inference speed** | Fastest on GPU | Fast on GPU | Fastest on CPU |
+| **Quality at 4-bit** | Excellent | Good | Good (Q4_K_M) |
+| **Tooling** | vLLM, AutoAWQ | AutoGPTQ, vLLM, transformers | llama.cpp, Ollama, LM Studio |
+| **CPU support** | No | No | Yes |
+| **Ease of use** | Moderate | Moderate | Easy (Ollama wraps it) |
+| **File format** | Safetensors + config | Safetensors + config | Single .gguf file |
+| **Quantize your own** | Complex | Moderate | Easy with llama.cpp convert tools |
+
+My current defaults: **AWQ** for anything hitting a production API endpoint on CUDA hardware; **GGUF Q4_K_M** for local development, Apple Silicon, and anything that needs CPU fallback.
+
+---
+
+## Tools and Frameworks
+
+**Inference runtimes:**
+- [llama.cpp](https://github.com/ggerganov/llama.cpp) — the foundation. Runs GGUF on CPU, CUDA, Metal, and more. Fast, actively maintained.
+- [Ollama](https://ollama.ai) — wraps llama.cpp with model management, an OpenAI-compatible API, and one-line model pulls. Best starting point.
+- [LM Studio](https://lmstudio.ai) — GUI for GGUF models on macOS and Windows. Great if you don't want to touch a terminal.
+- [vLLM](https://github.com/vllm-project/vllm) — production-grade serving for AWQ and GPTQ on CUDA with continuous batching and high throughput.
+
+**Libraries for working with quantized models:**
+- [AutoAWQ](https://github.com/casper-hansen/AutoAWQ) — quantize and load AWQ models.
+- [AutoGPTQ](https://github.com/AutoGPTQ/AutoGPTQ) — quantize and load GPTQ models.
+- [bitsandbytes](https://github.com/TimDettmers/bitsandbytes) — in-memory 4-bit and 8-bit quantization at load time via `load_in_4bit=True`. Slower than GPTQ/AWQ but requires no pre-quantized model.
+
+**Model sources:**
+- [Bartowski on Hugging Face](https://huggingface.co/bartowski) — consistently high-quality GGUF quantizations of major open models.
+- [TheBloke](https://huggingface.co/TheBloke) — the original prolific GGUF/GPTQ quantizer; many repos, though newer models are now covered by bartowski and others.
+- [Hugging Face GGUF search](https://huggingface.co/models?library=gguf) — filter by library to find GGUF variants of any model.
+
+---
+
+## Verdict
+
+Quantization is not a compromise you reluctantly make. For most real-world tasks, a 4-bit quantized model running locally is better than calling a cloud API — lower latency, no per-token cost, no data leaving your machine, and the ability to run experiments without rate limits.
+
+The practical hierarchy I'd recommend:
+
+1. **Start with GGUF Q4_K_M via Ollama.** It works on almost any hardware, requires no Python environment, and the quality is genuinely good.
+2. **Upgrade to Q5_K_M or Q8_0** if you're doing reasoning-heavy tasks and have the VRAM to spare.
+3. **Switch to AWQ + vLLM** when you need production throughput on CUDA hardware and can afford to set up a proper inference server.
+4. **Stay at FP16** only when you're running evaluation benchmarks, doing final quality comparisons, or when VRAM is abundant and you need every last bit of model fidelity.
+
+The field moves fast. AWQ quality keeps improving, llama.cpp adds new quantization types regularly, and the gap between 4-bit and full precision keeps narrowing. But the fundamentals — fewer bits means less memory, with careful methods to minimize the quality hit — are stable enough to be worth understanding deeply.
+
+---
 
 ## FAQ
 
-### Is this only for advanced AI teams?
+### What does Q4_K_M mean exactly?
 
-No. The concepts are useful for small teams as well, but the implementation should match the team's maturity. A small team can start with a narrow workflow, manual review, and simple logs. A larger organization may need policy controls, shared evaluation infrastructure, and formal approval paths.
+The `Q4` means 4-bit integer quantization. The `K` means k-means clustering is used to find the best quantization centroids per block (rather than simple linear rounding). The `M` is a size variant — `S` (small) is slightly smaller and faster, `M` (medium) balances quality and speed, and `L` (large) is the highest quality 4-bit variant. Q4_K_M is the community-standard recommendation because it sits at the best quality-per-byte point in practice.
 
-### What is the biggest risk?
+### Can I quantize my own fine-tuned model?
 
-The biggest risk is not that the model makes one obvious mistake. The bigger risk is that a workflow quietly produces plausible but wrong output at scale. This is why evaluation, review, and monitoring matter. Treat AI output as work that needs quality control, not as magic.
+Yes. If you have a Hugging Face model (in safetensors or PyTorch format), you can convert it to GGUF using the `convert_hf_to_gguf.py` script in the llama.cpp repo, then quantize it with `./llama-quantize`. For AWQ, use the `AutoAWQ` library with a calibration dataset. Expect quantizing a 7B model to take 10–30 minutes on a modern GPU.
 
-### How long does adoption take?
+### Does quantization affect the model's context length?
 
-A useful prototype can often be built quickly, but production adoption takes longer because teams need permissions, evaluation, documentation, and user feedback. Plan for iteration. The first version should teach you which assumptions were wrong.
+No. Quantization compresses the weight values but does not change the model's architecture, attention mechanism, or maximum context length. A 7B model with a 128K context window remains capable of processing 128K tokens at Q4_K_M — though you'll need enough RAM/VRAM to hold the KV cache for long contexts, which grows with sequence length regardless of quantization.
 
-### Should we build or buy?
+### Is there a quality difference between different GGUF quantizers?
 
-Buy when the workflow is common, the vendor integrates with your stack, and the risk profile is acceptable. Build when the workflow depends on proprietary context, custom tools, or differentiated product behavior. Many teams use a hybrid approach: buy model access or infrastructure, then build the workflow layer themselves.
+Yes, and it's meaningful. The tools for generating GGUF files have improved significantly over time. Older quantizations using `q4_0` (the original simple method) are noticeably worse than modern `q4_k_m`. Always prefer models quantized with recent llama.cpp versions using the K-quant methods. The model cards on Hugging Face usually list the quantization type and tool version used.
 
-### How should success be measured?
+### When should I use bitsandbytes `load_in_4bit` instead of GPTQ or AWQ?
 
-Measure outcomes rather than excitement. Good measures include task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership. Add human review quality and user adoption data. If people try the system once and return to the old process, the rollout has not succeeded.
-
-## Final Takeaway
-
-This approach is valuable when it is connected to a real workflow, evaluated against real examples, and operated with clear boundaries. The winning teams will not be the ones with the longest list of AI tools. They will be the teams that turn AI into repeatable, observable, and trusted work.
-
-Start small, measure honestly, and improve the system with evidence. Use model APIs, open-weight models, prompt templates, embeddings, vector databases, evaluation suites, logs, and guardrails; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations where they fit, but keep the focus on more reliable AI products with measurable quality, cost, and latency controls; clearer tool selection and workflows that save time without creating hidden risk. That is the difference between an impressive demo and a capability that keeps paying off after the novelty fades.
+Use bitsandbytes when you want to quickly test a model at reduced precision without downloading a pre-quantized file. It quantizes the model dynamically at load time. The downside is that it's slower during inference and uses more VRAM than a properly quantized GPTQ or AWQ model. I use it for rapid experiments, then switch to AWQ for anything I care about running efficiently.

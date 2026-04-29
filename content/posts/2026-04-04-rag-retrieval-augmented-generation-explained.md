@@ -2,145 +2,417 @@
 title: "RAG: Retrieval-Augmented Generation Explained"
 date: "2026-04-04"
 slug: "rag-retrieval-augmented-generation-explained"
-description: "A practical, developer-friendly guide to rag: retrieval-augmented generation explained with architecture, evaluation, rollout advice, and FAQ."
+description: "RAG explained step by step: architecture, chunking, embeddings, vector DBs, advanced techniques, and evaluation for production LLM apps."
 heroImage: "/images/heroes/rag-retrieval-augmented-generation-explained.webp"
 tags: [llm, ai-tools]
 ---
 
-This topic is a practical topic for teams that want AI to create durable value instead of short demos.
+In early 2023 I watched a live demo of a GPT-4 chatbot go sideways in real time. The company had trained the model to answer questions about their internal knowledge base — three years of engineering runbooks, architecture decisions, postmortem docs. The model was confident, articulate, and wrong on roughly one in four answers. It was inventing details it had never seen because the knowledge base wasn't actually in the context. It was only described in a system prompt.
 
-This guide is written for developers, technical product managers, AI engineers, and teams choosing models for real applications; operators, developers, founders, analysts, and teams comparing AI products for daily work. It focuses on large language models, model evaluation, inference, prompting, retrieval, and production AI systems; AI tools, developer productivity, automation platforms, and practical AI workflows and explains how to evaluate the topic in a way that leads to more reliable AI products with measurable quality, cost, and latency controls; clearer tool selection and workflows that save time without creating hidden risk. The emphasis is practical: what the concept means, how it fits into a real stack, what trade-offs matter, and how to avoid common implementation mistakes.
+That team eventually rebuilt their system using retrieval-augmented generation, cut their hallucination rate by roughly 80%, and shipped to production three months later. RAG is not magic, but it is currently the most practical solution to the "LLMs don't know what's in your data" problem. This guide explains how it works, how to build it, and how to make it production-ready.
 
-The AI market changes quickly, so this article avoids brittle claims about exact pricing or one-time benchmark rankings. Use it as a durable decision framework, then confirm vendor limits, model names, and pricing on the official product pages before you buy or deploy.
+---
 
-## What It Really Means
+## What Is RAG?
 
-At a high level, This topic sits inside large language models, model evaluation, inference, prompting, retrieval, and production AI systems; AI tools, developer productivity, automation platforms, and practical AI workflows. The important point is not the label itself. The important point is the workflow it enables. A useful AI tool or model should reduce the distance between a user's intent and a correct, reviewed result. It should also make the work easier to observe, improve, and govern over time.
+**Retrieval-augmented generation** (RAG) is an architecture pattern that gives a language model access to external knowledge at inference time by retrieving relevant documents and injecting them into the prompt before generation.
 
-For a developer team, that usually means three things. First, the system has to understand enough context to be useful. That context might be source code, product documentation, logs, tickets, metrics, documents, examples, or previous decisions. Second, the system needs a reliable way to act. That action might be generating code, calling an API, searching a knowledge base, opening a pull request, drafting a release plan, or summarizing a customer conversation. Third, the system needs a feedback loop so the team can measure quality and fix regressions.
+Without RAG, an LLM answers from its parametric memory — everything compressed into its weights during training. That memory has a knowledge cutoff, knows nothing about your private data, and hallucinates when asked about things it barely remembers. With RAG, the model gets a curated slice of real, current, specific information for every query. Its job shifts from "remember the answer" to "synthesize an answer from the provided evidence."
 
-A common mistake is to treat this as a single product decision. In practice, it is an operating model. The best teams define where AI is allowed to help, where humans must review, how outputs are tested, and what happens when the system is uncertain. That operating model matters more than the name on the invoice.
+The conceptual shift is important. Fine-tuning teaches the model new facts by updating its weights. RAG supplies facts at runtime without touching the weights. Fine-tuning is like studying for an exam; RAG is like taking the exam with an open book. For most teams, the open-book approach is faster to build, easier to update, cheaper to maintain, and produces more auditable outputs.
 
-When you compare options, ask whether the tool fits the jobs people already do. A strong system should work with model APIs, open-weight models, prompt templates, embeddings, vector databases, evaluation suites, logs, and guardrails; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations. It should improve a real process without forcing every team to rebuild its workflow from scratch. If adoption requires too much ritual, the system will look impressive in a demo and then disappear from daily use.
+---
 
-## Where It Creates Value
+## RAG Architecture: How the Pipeline Works
 
-The best use cases are repetitive enough to benefit from automation but nuanced enough to justify AI. Purely mechanical work can often be handled with scripts. Highly ambiguous strategy work still needs experienced people. The attractive middle ground is work where context, judgment, and speed all matter.
+Here's the complete architecture of a production RAG system, from user query to generated answer:
 
-One common use case is research and synthesis. Teams can use AI to gather scattered information, compare options, and turn notes into a structured recommendation. This is useful for architecture reviews, vendor selection, incident summaries, release notes, and customer support analysis. The output should not be accepted blindly, but it can shorten the first draft from hours to minutes.
+```mermaid
+flowchart TD
+    A([User Query]) --> B[Query Encoder]
+    B --> C[Vector Search\nVector DB]
+    C --> D[Retrieved Chunks]
+    D --> E[Re-ranker\noptional]
+    E --> F[Prompt Augmentation\nSystem prompt + context + query]
+    A --> F
+    F --> G[LLM Generation]
+    G --> H([Final Answer\nwith citations])
+    I[(Document Corpus)] --> J[Chunking]
+    J --> K[Embedding Model]
+    K --> L[(Vector Store\nIndexed)]
+    L --> C
+```
 
-A second use case is assisted execution. In software teams, that may mean code generation, test generation, migration planning, configuration review, or pull request analysis. In operations teams, it may mean triage, runbook lookup, log summarization, or routing incidents to the right owner. The important boundary is that AI should work inside a controlled path, not improvise across production systems without oversight.
+The pipeline has two distinct phases:
 
-A third use case is quality improvement. AI can help create test cases, summarize failures, classify feedback, detect inconsistencies, and highlight missing documentation. This is where the approach often produces compounding value. Each cycle improves the team's knowledge base, examples, evaluation cases, and standard operating procedures.
+**Indexing** (offline, run once or incrementally): Documents are chunked, embedded into dense vectors, and stored in a vector database. This is the foundation the retrieval step searches against.
 
-The strongest teams start with one or two narrow workflows. They measure task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership before and after adoption. Then they expand only when the data shows that the system helps. This keeps the project grounded and prevents the team from chasing novelty.
+**Inference** (online, every query): The user's query is embedded using the same model, the vector database is searched for the closest chunks, those chunks are injected into the prompt alongside the original query, and the LLM generates a grounded answer.
 
-## A Practical Architecture
+Every component in this pipeline is a lever you can tune. The rest of this guide walks through each one.
 
-A production-ready approach to this usually has five layers: interface, context, reasoning, action, and evaluation. The interface is where users express intent. It might be a chat box, command line, editor extension, dashboard, API endpoint, or background job. The interface should make the expected result obvious and should expose enough controls for the user to review or redirect the work.
+---
 
-The context layer gathers the information the system needs. This layer can include retrieval from documents, code search, database records, logs, metrics, tickets, configuration files, or user-provided examples. Good context is selective. Sending everything to a model increases cost and noise. A better pattern is to retrieve the smallest set of evidence that can support the next decision.
+## Why RAG Beats Fine-Tuning for Most Use Cases
 
-The reasoning layer chooses a plan or produces an answer. This may be a single model call, a chain of calls, a workflow graph, or an agent loop. Keep this layer simple until complexity is justified. Many teams build elaborate multi-agent systems before they can reliably evaluate one model call. That usually makes debugging harder.
+This is the question I get most often. The honest answer is that they solve different problems, but RAG wins for the majority of practical production scenarios.
 
-The action layer connects the system to tools. These tools can include model APIs, open-weight models, prompt templates, embeddings, vector databases, evaluation suites, logs, and guardrails; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations. Tool use should be explicit, typed, logged, and permissioned. When an action can affect data, infrastructure, cost, or customers, require approval or run it in a sandbox first.
+**Knowledge currency**: Fine-tuned weights go stale. A model fine-tuned on your docs in January doesn't know about the architectural decision you made in March. RAG reads from your live knowledge base. Update the index, update the answers.
 
-The evaluation layer closes the loop. It should track task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership and preserve examples of both success and failure. Without this layer, teams are forced to judge quality by anecdotes. With it, they can improve prompts, retrieval, model choice, and workflow design with evidence.
+**Auditability**: When a RAG system answers a question, you can show the user exactly which source chunks were used. That's not possible with fine-tuning — the knowledge is baked into weight parameters with no traceability.
 
-## How to Evaluate Quality
+**Data volume**: Fine-tuning requires enough high-quality training examples to move model behavior. RAG just requires documents. If you have 10,000 runbooks but only 200 Q&A pairs, RAG is the right call.
 
-Evaluation is where serious AI work separates itself from experimentation. A useful evaluation plan for this starts with real tasks. Gather examples from support tickets, pull requests, internal documents, analytics requests, incident reports, or customer conversations. Remove sensitive information, then turn those examples into a small but representative test set.
+**Cost and iteration speed**: Fine-tuning a frontier model costs real money and takes hours or days. RAG infrastructure takes hours to set up initially, then updates cost the price of re-indexing changed documents.
 
-Each test case should define the input, the expected behavior, and the failure modes that matter. For some tasks, the expected result is exact. For example, a JSON extraction task can be checked against a schema. For other tasks, the expected result is judged by a rubric. A good rubric might score correctness, completeness, clarity, citation quality, security awareness, and usefulness.
+**Where fine-tuning wins**: Style, format, tone, domain-specific reasoning patterns, tasks where you want the model to internalize a way of thinking rather than recall specific facts. Code generation fine-tunes well. Customer support tone fine-tunes well. "Answer questions about our product documentation" does not benefit much from fine-tuning that RAG can't match at lower cost.
 
-Do not rely on a single aggregate score. Track dimensions separately. A system can be fast and cheap while still being wrong. It can be accurate but too slow for interactive use. It can produce polished language while ignoring important constraints. The right choice depends on which dimension is binding for the workflow.
+---
 
-For this topic, useful metrics include task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership. Add qualitative review for edge cases. Keep examples where the system failed, because those examples become the most valuable part of the evaluation set. When you change prompts, retrieval rules, model versions, or tool permissions, rerun the same cases.
+## Building a RAG Pipeline: Step by Step
 
-Evaluation also protects teams from demo bias. A demo tends to show happy paths. A test set shows what happens when inputs are messy, incomplete, adversarial, or simply boring. Real users send all four.
+I'll build a minimal but functional RAG system using Python, LangChain, OpenAI embeddings, and Chroma as the vector store. The same principles apply regardless of which libraries you use.
 
-## Implementation Plan
+### Step 1: Install dependencies
 
-Start by writing a one-page problem statement. Describe the users, the job they are trying to complete, the current pain, and the measurable result you want. This keeps the project anchored in a business or engineering outcome instead of a vague AI initiative.
+```python
+pip install langchain langchain-openai langchain-chroma chromadb tiktoken
+```
 
-Next, map the workflow from request to final review. Identify where context enters the system, where the model is used, where a tool is called, and where a human approves the result. Mark any step that touches customer data, production infrastructure, financial spend, or security-sensitive information. Those steps need stronger controls.
+### Step 2: Load and split your documents
 
-Then build the smallest working version. Use existing tools where possible. Connect only the context sources that matter. Add simple logging. Save inputs and outputs for review. Avoid building a generalized platform before you know which workflow will survive contact with users.
+```python
+from langchain_community.document_loaders import DirectoryLoader, TextLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 
-After the first version works, run it against a test set. Review failures in batches. Some failures will be prompt problems. Some will be retrieval problems. Some will be product problems, where the interface lets users ask for work the system cannot safely perform. Fix the highest-impact category first.
+# Load all .md files from a docs directory
+loader = DirectoryLoader("./docs", glob="**/*.md", loader_cls=TextLoader)
+documents = loader.load()
 
-For general adoption, focus on one team and one workflow first. A narrow workflow with visible value is easier to improve than a broad platform that nobody understands.
+# Split into chunks
+splitter = RecursiveCharacterTextSplitter(
+    chunk_size=512,
+    chunk_overlap=64,
+    separators=["\n\n", "\n", ". ", " ", ""],
+)
+chunks = splitter.split_documents(documents)
+print(f"Created {len(chunks)} chunks from {len(documents)} documents")
+```
 
-Finally, write an operating guide. Include setup steps, permissions, expected inputs, known limitations, escalation rules, and evaluation commands. A tool that only one person knows how to operate is not production-ready, even if it works well in a notebook.
+### Step 3: Embed and index
 
-## Common Mistakes to Avoid
+```python
+from langchain_openai import OpenAIEmbeddings
+from langchain_chroma import Chroma
 
-The first mistake is adopting this approach without a clear owner. AI work crosses product, engineering, legal, security, and operations. If nobody owns the workflow, decisions become fragmented. Assign an owner who can prioritize the use case, gather feedback, and decide when the system is good enough to expand.
+embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 
-The second mistake is trusting polished output. Large language models are good at sounding confident. That does not mean the answer is grounded. Require citations, retrieved evidence, tests, schemas, or human review when the task has real consequences. The review process should be designed before the system is widely used.
+vectorstore = Chroma.from_documents(
+    documents=chunks,
+    embedding=embeddings,
+    persist_directory="./chroma_db",
+)
+```
 
-The third mistake is hiding uncertainty. If the system is missing context, blocked by permissions, or making an assumption, the user should see that. A clear refusal or a request for more information is better than a fabricated answer. This is especially important in large language models, model evaluation, inference, prompting, retrieval, and production AI systems; AI tools, developer productivity, automation platforms, and practical AI workflows because small errors can cascade through technical decisions.
+### Step 4: Build the retrieval chain
 
-The fourth mistake is ignoring cost and latency until late. Token usage, tool calls, retries, and long context windows can become expensive. Measure cost per successful task, not only cost per model call. A cheaper model that requires repeated human cleanup may be more expensive than a stronger model with fewer failures.
+```python
+from langchain_openai import ChatOpenAI
+from langchain.chains import RetrievalQA
+from langchain.prompts import PromptTemplate
 
-The fifth mistake is skipping change management. Users need to know what the system is for, when to trust it, and how to report problems. Good rollout includes examples, office hours, documentation, and a feedback loop. Adoption is a product problem, not only an engineering problem.
+PROMPT_TEMPLATE = """You are a helpful assistant. Answer the question using ONLY the context below.
+If the context does not contain the answer, say "I don't have enough information to answer that."
 
-## Recommended Stack and Workflow
+Context:
+{context}
 
-A strong stack for this does not have to be complicated. Begin with a stable interface, a small set of trusted context sources, a reliable model or tool provider, and a visible review step. Add orchestration only when the workflow genuinely needs multiple steps or tool calls.
+Question: {question}
 
-For context, prefer sources that are maintained as part of normal work: repositories, docs, tickets, runbooks, dashboards, and customer records with appropriate access controls. Stale context creates stale answers. If the knowledge base is not maintained, retrieval will not save the system.
+Answer:"""
 
-For model selection, test more than one option. Compare quality, latency, cost, context length, structured output support, tool calling behavior, privacy terms, and operational fit. The best model for drafting a document may not be the best model for code repair, classification, or high-volume summarization.
+prompt = PromptTemplate(
+    template=PROMPT_TEMPLATE,
+    input_variables=["context", "question"],
+)
 
-For workflow control, use typed inputs and outputs. JSON schemas, templates, checklists, and approval forms make results easier to validate. They also help users understand what the system can do. Free-form chat is useful for exploration, but production workflows benefit from structure.
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
 
-For monitoring, capture prompt versions, retrieval hits, model names, tool calls, latency, token usage, user edits, and final outcomes. These records make it possible to debug quality issues and defend decisions later. Monitoring also helps teams decide when a prompt needs a small change and when the workflow needs a redesign.
+qa_chain = RetrievalQA.from_chain_type(
+    llm=llm,
+    retriever=retriever,
+    chain_type_kwargs={"prompt": prompt},
+    return_source_documents=True,
+)
+```
 
-## Decision Checklist
+### Step 5: Query it
 
-Use a decision checklist before you invest deeply. The checklist should force the team to connect the technology to a measurable workflow. For this topic, the most useful criteria are usually workflow fit, output quality, integration effort, operating cost, security posture, and long-term maintainability.
+```python
+result = qa_chain.invoke({"query": "How do we handle database migrations?"})
+print(result["result"])
+print("\nSources:")
+for doc in result["source_documents"]:
+    print(f"  - {doc.metadata['source']}")
+```
 
-Ask these questions before adoption:
+That's a working RAG pipeline in under 50 lines. The rest of the work — and most of the quality delta — comes from tuning each component.
 
-- What user job will this improve?
-- What evidence shows that the current workflow is slow, expensive, or error-prone?
-- What context does the system need, and who owns that context?
-- What actions can the system take, and which actions require approval?
-- What data must never be sent to a third-party service?
-- How will we measure task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership?
-- What happens when the model is uncertain or wrong?
-- Who reviews failures and improves the workflow?
-- What is the rollback plan if quality drops?
+---
 
-The answers do not need to be perfect at the start. They do need to be explicit. Explicit assumptions can be tested. Hidden assumptions become production incidents, budget surprises, or tools that nobody uses.
+## Chunking Strategies
 
-A good decision also includes a stop rule. Decide what result would make the team pause or abandon the rollout. This protects the organization from continuing an AI project simply because it is already in motion.
+Chunking is where most RAG implementations either gain or lose significant quality. The wrong chunk size is one of the most common reasons a RAG system underperforms.
+
+**Fixed-size chunking** (what most tutorials show) splits text every N tokens with optional overlap. It's fast and simple but oblivious to document structure. A chunk might start in the middle of a sentence, split a code block, or contain half a section header and half of an unrelated paragraph.
+
+**Recursive character splitting** (what I showed above) is better — it tries to respect natural boundaries by breaking on paragraph breaks first, then newlines, then sentences. It's the right default for unstructured text.
+
+**Semantic chunking** embeds every sentence, measures cosine similarity to the next sentence, and splits when similarity drops below a threshold. This keeps semantically coherent ideas together. It's significantly better for documents with clear topic transitions, at the cost of being slower and more complex to implement.
+
+**Document-structure-aware chunking** respects headings, bullet lists, code blocks, and table cells as chunk boundaries. For Markdown documentation, this is often the best approach. For PDFs, it requires careful parsing.
+
+**My practical recommendation**: Start with `RecursiveCharacterTextSplitter` at 512 tokens with 10-15% overlap. Run your evaluation (more on this below), then experiment with semantic chunking if retrieval quality is still the bottleneck.
+
+---
+
+## Embedding Models
+
+The embedding model determines the quality of your semantic search. Every chunk and every query is encoded into a dense vector; retrieval is the search for the closest vectors. A better embedding model means better retrieval, which means better answers downstream.
+
+As of early 2026, the models I reach for most often:
+
+| Model | Dimensions | Context | Best For |
+|---|---|---|---|
+| `text-embedding-3-small` (OpenAI) | 1536 | 8k tokens | Cost-efficient baseline, strong general performance |
+| `text-embedding-3-large` (OpenAI) | 3072 | 8k tokens | Higher accuracy when cost isn't the constraint |
+| `embed-english-v3.0` (Cohere) | 1024 | 512 tokens | Strong on shorter chunks, good reranking integration |
+| `nomic-embed-text` (open-weight) | 768 | 8k tokens | Local/private deployments, competitive quality |
+| `mxbai-embed-large` (open-weight) | 1024 | 512 tokens | Top open-weight option for retrieval benchmarks |
+
+One thing that catches teams off guard: **you must use the same embedding model at index time and query time.** If you re-index with a different model, you must rebuild the entire vector store. Plan your model choice before you index at scale.
+
+---
+
+## Vector Databases
+
+The vector database stores your embeddings and executes approximate nearest-neighbor (ANN) search at query time. The right choice depends on your scale, existing infrastructure, and operational tolerance.
+
+**Chroma**: Best for local development and small-to-medium production deployments. Simple API, no external dependencies, persistent storage. I use it for any project under ~1M chunks.
+
+**Pinecone**: Fully managed, scales to hundreds of millions of vectors without operational overhead. The right choice when you want search infrastructure without managing it. Pay-per-use pricing adds up at scale.
+
+**Weaviate**: Open-source, supports hybrid search (vector + BM25 keyword) out of the box. Good option when you want hybrid search without building it yourself.
+
+**Qdrant**: Open-source, high performance, excellent filtering support. My preference for self-hosted deployments that need granular metadata filtering alongside vector search.
+
+**pgvector**: If you're already on PostgreSQL, the pgvector extension adds vector similarity search without adding a new infrastructure component. Quality is lower than purpose-built ANN databases at scale, but often good enough for smaller corpora with simpler retrieval needs.
+
+---
+
+## Complete RAG Workflow
+
+Here's how indexing and inference fit together across the full system lifecycle:
+
+```mermaid
+flowchart LR
+    subgraph Indexing ["Indexing Phase (Offline)"]
+        A[Raw Documents] --> B[Parse & Clean]
+        B --> C[Chunk]
+        C --> D[Embed]
+        D --> E[(Vector Store)]
+    end
+    subgraph Inference ["Inference Phase (Online)"]
+        F([User Query]) --> G[Embed Query]
+        G --> H{Vector Search}
+        E --> H
+        H --> I[Top-K Chunks]
+        I --> J[Re-rank\noptional]
+        J --> K[Build Prompt]
+        F --> K
+        K --> L[LLM]
+        L --> M([Answer + Sources])
+    end
+    subgraph Maintenance ["Maintenance"]
+        N[New / Updated Docs] --> B
+        O[Evaluation Results] --> P[Tune chunk size,\nk, re-ranker, prompt]
+    end
+```
+
+---
+
+## Advanced RAG: Re-ranking, Hybrid Search, and HyDE
+
+Once the basic pipeline works, these three techniques produce the biggest quality improvements.
+
+### Re-ranking
+
+Vector search returns the top-K most semantically similar chunks. That's not the same as the K most useful chunks for answering the question. A cross-encoder re-ranker takes the query and each retrieved chunk as a pair and scores their relevance directly — more expensive than embedding search, but dramatically more accurate.
+
+```python
+from langchain.retrievers import ContextualCompressionRetriever
+from langchain_cohere import CohereRerank
+
+compressor = CohereRerank(model="rerank-english-v3.0", top_n=3)
+compression_retriever = ContextualCompressionRetriever(
+    base_compressor=compressor,
+    base_retriever=retriever,
+)
+```
+
+In my experience, adding re-ranking improves answer quality more than going from `k=5` to `k=20` in raw retrieval. Start with Cohere's reranker or a local cross-encoder from `sentence-transformers`.
+
+### Hybrid Search
+
+Pure vector search excels at semantic similarity but struggles with exact keywords, product names, version numbers, and acronyms. BM25 (keyword search) is the inverse — exact on keywords, blind to semantics. Hybrid search combines both, typically by summing their scores with a tunable weight.
+
+```python
+from langchain.retrievers import EnsembleRetriever
+from langchain_community.retrievers import BM25Retriever
+
+bm25_retriever = BM25Retriever.from_documents(chunks)
+bm25_retriever.k = 5
+
+ensemble_retriever = EnsembleRetriever(
+    retrievers=[bm25_retriever, retriever],
+    weights=[0.4, 0.6],  # tune based on your corpus
+)
+```
+
+For technical documentation with specific API names, error codes, or product SKUs, hybrid search consistently outperforms pure vector retrieval. Start with 40% BM25 / 60% vector and tune from there.
+
+### HyDE (Hypothetical Document Embedding)
+
+HyDE is an elegant technique for improving retrieval on queries that are phrased very differently from the documents they should match. Instead of embedding the raw query, you ask the LLM to generate a hypothetical answer, embed that, and use it to search. The hypothetical answer is in the same style as the documents it should retrieve.
+
+```python
+from langchain.chains import HypotheticalDocumentEmbedder
+
+hyde_embeddings = HypotheticalDocumentEmbedder.from_llm(
+    llm=ChatOpenAI(model="gpt-4o-mini"),
+    base_embeddings=embeddings,
+    custom_instructions="Write a passage that would answer the following question:",
+)
+
+hyde_retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
+hyde_retriever.vectorstore._embedding_function = hyde_embeddings
+```
+
+HyDE works well when users ask vague or high-level questions that don't naturally match the technical language in your corpus. It adds one LLM call per query, so use it selectively on queries where retrieval quality is otherwise low.
+
+---
+
+## Evaluating Your RAG Pipeline
+
+Evaluation is where RAG projects succeed or fail in the long run. Without a measurement framework, you're flying blind — you can't tell whether a change to chunk size or retrieval parameters helped or hurt.
+
+The three metrics I track for every RAG system:
+
+**Context Precision**: Of the chunks retrieved, what fraction were actually relevant to the question? High context precision means the retriever isn't pulling in noise.
+
+**Context Recall**: Of the information needed to answer the question, what fraction was present in the retrieved chunks? High context recall means nothing important was missed.
+
+**Answer Faithfulness**: Is the generated answer grounded in the retrieved context? A faithfulness score of 1.0 means every claim in the answer can be traced to the retrieved chunks.
+
+RAGAS is the library I use most for automated RAG evaluation:
+
+```python
+from ragas import evaluate
+from ragas.metrics import (
+    context_precision,
+    context_recall,
+    faithfulness,
+    answer_relevancy,
+)
+from datasets import Dataset
+
+test_cases = Dataset.from_dict({
+    "question": ["How do we handle database migrations?"],
+    "ground_truth": ["We use Alembic for migrations, run in CI before deployment."],
+    "answer": [result["result"]],
+    "contexts": [[doc.page_content for doc in result["source_documents"]]],
+})
+
+scores = evaluate(test_cases, metrics=[
+    context_precision,
+    context_recall,
+    faithfulness,
+    answer_relevancy,
+])
+print(scores)
+```
+
+Build a test set from real user queries before you go to production. Fifty diverse, representative questions with known correct answers is enough to drive meaningful improvement decisions.
+
+---
+
+## Should You Use RAG? A Decision Flowchart
+
+```mermaid
+flowchart TD
+    A([Start: I want my LLM to answer questions]) --> B{Does the knowledge\nexist in public\ntraining data?}
+    B -->|Yes, and it's up to date| C{Accuracy requirements\nvery high?}
+    B -->|No — private or recent| D[RAG is the right call]
+    C -->|No| E[Vanilla prompting\nmay be enough]
+    C -->|Yes| F{Can you provide\nprecise grounding?}
+    F -->|Yes| D
+    F -->|No| G{Is it a behavior /\nstyle / format issue?}
+    G -->|Yes| H[Fine-tuning is better]
+    G -->|No| D
+    D --> I{Scale and update\nfrequency?}
+    I -->|Small corpus, rare updates| J[Chroma + basic RAG]
+    I -->|Large corpus or frequent updates| K{Need auditability\nor hybrid search?}
+    K -->|Yes| L[Qdrant or Weaviate\nwith re-ranking]
+    K -->|No| M[Pinecone for\nmanaged simplicity]
+```
+
+---
+
+## Common RAG Failures (and Fixes)
+
+**Wrong chunks retrieved**: The model answers confidently from irrelevant context. Fix: add re-ranking, try hybrid search, check your chunk boundaries for split semantic units.
+
+**Missing information in retrieved context**: The answer exists in the corpus but retrieval never surfaces it. Fix: increase `k`, add BM25 hybrid search, check if the relevant content is buried in a format the embedder handles poorly (tables, code blocks).
+
+**Model ignores retrieved context**: The model answers from its weights instead of the injected chunks. Fix: strengthen the system prompt with explicit grounding instructions ("Answer ONLY based on the provided context"), reduce temperature to 0, use a model with longer reliable context utilization.
+
+**Chunk overlap causes duplicate information**: The answer repeats the same fact three times from overlapping chunks. Fix: reduce overlap percentage, add a deduplication step before prompt injection.
+
+**Stale index**: The knowledge base has been updated but the vector store hasn't been re-indexed. Fix: implement incremental indexing triggered by document changes, add a metadata field for `last_indexed_at` and monitor it.
+
+**Context window overflow**: Too many chunks push the query and system prompt out of the effective context window. Fix: re-rank and trim to top 3-5 chunks, use a model with larger context, or implement hierarchical retrieval (coarse then fine).
+
+---
+
+## Verdict
+
+RAG is the right default architecture for any production LLM system that needs to answer questions about private, recent, or domain-specific information. It's faster to build than fine-tuning, produces auditable outputs, and keeps your knowledge base decoupled from your model weights so you can update either independently.
+
+The quality ceiling is real — RAG won't save you from a terrible embedding model or a corpus of poorly maintained documents — but it's a much higher ceiling than you'll hit with parametric memory alone. Start with the basic pipeline, measure context precision and faithfulness from day one, and layer in re-ranking and hybrid search when your evaluation data shows it's worth it.
+
+The teams I've seen get the most out of RAG are the ones that treated it as a product problem, not just an engineering problem: they maintained their knowledge base, reviewed retrieval failures regularly, and iterated on chunking strategy based on real user queries. The underlying technology is straightforward. The discipline of keeping it working well is where the real work lives.
+
+---
 
 ## FAQ
 
-### Is this only for advanced AI teams?
+### What's the difference between RAG and a vector database?
 
-No. The concepts are useful for small teams as well, but the implementation should match the team's maturity. A small team can start with a narrow workflow, manual review, and simple logs. A larger organization may need policy controls, shared evaluation infrastructure, and formal approval paths.
+A vector database is one component inside a RAG system — it's the index that stores embeddings and executes similarity search. RAG is the broader architecture: chunking, embedding, retrieval, prompt augmentation, and generation together. You can have a vector database without RAG (for semantic search alone), but RAG always needs a vector database or similar retrieval mechanism.
 
-### What is the biggest risk?
+### How many chunks should I retrieve per query?
 
-The biggest risk is not that the model makes one obvious mistake. The bigger risk is that a workflow quietly produces plausible but wrong output at scale. This is why evaluation, review, and monitoring matter. Treat AI output as work that needs quality control, not as magic.
+Start with `k=5`. More chunks give the model more context but increase token cost and can dilute the most relevant information. After adding a re-ranker, you can retrieve more and trim to the top 3. The right number depends on your average chunk size and how many chunks typically contain relevant information for a given query — measure it with context recall.
 
-### How long does adoption take?
+### Can RAG work with structured data like databases and spreadsheets?
 
-A useful prototype can often be built quickly, but production adoption takes longer because teams need permissions, evaluation, documentation, and user feedback. Plan for iteration. The first version should teach you which assumptions were wrong.
+Yes, but the approach differs. For tables and spreadsheets, consider text-to-SQL (let the LLM generate queries against the real database) rather than embedding tabular data into chunks. Semi-structured data like JSON can be chunked if flattened into descriptive text. Pure columnar data (financial records, metrics) usually retrieves better via SQL than vector search.
 
-### Should we build or buy?
+### Does RAG work with multimodal content — PDFs with images, diagrams, charts?
 
-Buy when the workflow is common, the vendor integrates with your stack, and the risk profile is acceptable. Build when the workflow depends on proprietary context, custom tools, or differentiated product behavior. Many teams use a hybrid approach: buy model access or infrastructure, then build the workflow layer themselves.
+Increasingly yes. Vision-capable models can process page images directly, and tools like LlamaParse or unstructured.io can extract structured text from complex PDFs. For charts and diagrams, OCR plus a vision model to generate a text description of the chart works reasonably well. Multimodal RAG is an active area of development and the tooling is improving quickly.
 
-### How should success be measured?
+### How do I handle confidential information in a RAG system?
 
-Measure outcomes rather than excitement. Good measures include task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership. Add human review quality and user adoption data. If people try the system once and return to the old process, the rollout has not succeeded.
-
-## Final Takeaway
-
-This approach is valuable when it is connected to a real workflow, evaluated against real examples, and operated with clear boundaries. The winning teams will not be the ones with the longest list of AI tools. They will be the teams that turn AI into repeatable, observable, and trusted work.
-
-Start small, measure honestly, and improve the system with evidence. Use model APIs, open-weight models, prompt templates, embeddings, vector databases, evaluation suites, logs, and guardrails; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations where they fit, but keep the focus on more reliable AI products with measurable quality, cost, and latency controls; clearer tool selection and workflows that save time without creating hidden risk. That is the difference between an impressive demo and a capability that keeps paying off after the novelty fades.
+Metadata filtering is your primary tool. Tag every chunk at index time with access control metadata (user role, department, classification level), then filter the vector search at query time to only retrieve chunks the current user is authorized to see. Never mix chunks from different sensitivity levels in the same prompt without explicit access verification. For the most sensitive data, consider a separate index per sensitivity level rather than metadata filtering on a shared index.

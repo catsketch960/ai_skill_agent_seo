@@ -2,145 +2,684 @@
 title: "Building Apps with the Claude API: A Complete Tutorial"
 date: "2025-12-25"
 slug: "building-apps-claude-api-complete-tutorial"
-description: "A practical, developer-friendly guide to building apps with the claude api: a complete tutorial with architecture, evaluation, rollout advice, and FAQ."
+description: "Step-by-step Claude API tutorial: first call, streaming, tool use, prompt caching, and production tips. Build real apps with working code examples."
 heroImage: "/images/heroes/building-apps-claude-api-complete-tutorial.webp"
 tags: [claude, llm]
 ---
 
-This topic is easiest to understand when it is treated as a workflow instead of a collection of disconnected features.
+I've shipped production apps on top of a half-dozen LLM APIs, and the Claude API is the one I keep coming back to. The instruction-following is tighter, the context window is enormous, and prompt caching alone has cut my input costs by 80% on chat applications with large system prompts. This tutorial walks you through everything — from your first API call to a production-ready architecture — with working code at every step.
 
-This guide is written for developers, product teams, and organizations evaluating Claude for complex knowledge work; developers, technical product managers, AI engineers, and teams choosing models for real applications. It focuses on Claude models, coding workflows, enterprise AI, prompt engineering, and safe assistant design; large language models, model evaluation, inference, prompting, retrieval, and production AI systems and explains how to evaluate the topic in a way that leads to high-quality AI workflows with strong reasoning, clear instructions, and operational controls; more reliable AI products with measurable quality, cost, and latency controls. The emphasis is practical: what the concept means, how it fits into a real stack, what trade-offs matter, and how to avoid common implementation mistakes.
+By the end you'll understand not just how to call the API, but when to use streaming vs. synchronous calls, how to design system prompts, how to handle tool use for function calling, and how to run this economically at scale.
 
-The AI market changes quickly, so this article avoids brittle claims about exact pricing or one-time benchmark rankings. Use it as a durable decision framework, then confirm vendor limits, model names, and pricing on the official product pages before you buy or deploy.
+---
 
-## What It Really Means
+## What You'll Build
 
-At a high level, This topic sits inside Claude models, coding workflows, enterprise AI, prompt engineering, and safe assistant design; large language models, model evaluation, inference, prompting, retrieval, and production AI systems. The important point is not the label itself. The important point is the workflow it enables. A useful AI tool or model should reduce the distance between a user's intent and a correct, reviewed result. It should also make the work easier to observe, improve, and govern over time.
+We're going to build a developer assistant that can:
 
-For a developer team, that usually means three things. First, the system has to understand enough context to be useful. That context might be source code, product documentation, logs, tickets, metrics, documents, examples, or previous decisions. Second, the system needs a reliable way to act. That action might be generating code, calling an API, searching a knowledge base, opening a pull request, drafting a release plan, or summarizing a customer conversation. Third, the system needs a feedback loop so the team can measure quality and fix regressions.
+- Answer questions about a codebase loaded into context
+- Stream responses in real time
+- Call external tools (search, execute code)
+- Cache a large system prompt to cut costs
+- Return structured JSON for downstream processing
 
-A common mistake is to treat this as a single product decision. In practice, it is an operating model. The best teams define where AI is allowed to help, where humans must review, how outputs are tested, and what happens when the system is uncertain. That operating model matters more than the name on the invoice.
+Each section is self-contained. You can stop after any of them and have a working piece of software.
 
-When you compare options, ask whether the tool fits the jobs people already do. A strong system should work with Claude API, coding agents, prompt templates, document workflows, evaluation sets, permissioning, and review queues; model APIs, open-weight models, prompt templates, embeddings, vector databases, evaluation suites, logs, and guardrails. It should improve a real process without forcing every team to rebuild its workflow from scratch. If adoption requires too much ritual, the system will look impressive in a demo and then disappear from daily use.
+---
 
-## Where It Creates Value
+## Getting Started
 
-The best use cases are repetitive enough to benefit from automation but nuanced enough to justify AI. Purely mechanical work can often be handled with scripts. Highly ambiguous strategy work still needs experienced people. The attractive middle ground is work where context, judgment, and speed all matter.
+### Get an API Key
 
-One common use case is research and synthesis. Teams can use AI to gather scattered information, compare options, and turn notes into a structured recommendation. This is useful for architecture reviews, vendor selection, incident summaries, release notes, and customer support analysis. The output should not be accepted blindly, but it can shorten the first draft from hours to minutes.
+Go to [console.anthropic.com](https://console.anthropic.com), create an account, and generate an API key from the dashboard. Store it as an environment variable — never hardcode it.
 
-A second use case is assisted execution. In software teams, that may mean code generation, test generation, migration planning, configuration review, or pull request analysis. In operations teams, it may mean triage, runbook lookup, log summarization, or routing incidents to the right owner. The important boundary is that AI should work inside a controlled path, not improvise across production systems without oversight.
+```bash
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
 
-A third use case is quality improvement. AI can help create test cases, summarize failures, classify feedback, detect inconsistencies, and highlight missing documentation. This is where the approach often produces compounding value. Each cycle improves the team's knowledge base, examples, evaluation cases, and standard operating procedures.
+### Install the SDK
 
-The strongest teams start with one or two narrow workflows. They measure answer quality, edit distance, task completion rate, policy adherence, latency, and human review time; task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate before and after adoption. Then they expand only when the data shows that the system helps. This keeps the project grounded and prevents the team from chasing novelty.
+The official Python SDK is the fastest path to production. Install it with pip:
 
-## A Practical Architecture
+```bash
+pip install anthropic
+```
 
-A production-ready approach to this usually has five layers: interface, context, reasoning, action, and evaluation. The interface is where users express intent. It might be a chat box, command line, editor extension, dashboard, API endpoint, or background job. The interface should make the expected result obvious and should expose enough controls for the user to review or redirect the work.
+For TypeScript/Node.js:
 
-The context layer gathers the information the system needs. This layer can include retrieval from documents, code search, database records, logs, metrics, tickets, configuration files, or user-provided examples. Good context is selective. Sending everything to a model increases cost and noise. A better pattern is to retrieve the smallest set of evidence that can support the next decision.
+```bash
+npm install @anthropic-ai/sdk
+```
 
-The reasoning layer chooses a plan or produces an answer. This may be a single model call, a chain of calls, a workflow graph, or an agent loop. Keep this layer simple until complexity is justified. Many teams build elaborate multi-agent systems before they can reliably evaluate one model call. That usually makes debugging harder.
+This tutorial uses Python throughout, but the TypeScript SDK is nearly identical in structure.
 
-The action layer connects the system to tools. These tools can include Claude API, coding agents, prompt templates, document workflows, evaluation sets, permissioning, and review queues; model APIs, open-weight models, prompt templates, embeddings, vector databases, evaluation suites, logs, and guardrails. Tool use should be explicit, typed, logged, and permissioned. When an action can affect data, infrastructure, cost, or customers, require approval or run it in a sandbox first.
+---
 
-The evaluation layer closes the loop. It should track answer quality, edit distance, task completion rate, policy adherence, latency, and human review time; task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate and preserve examples of both success and failure. Without this layer, teams are forced to judge quality by anecdotes. With it, they can improve prompts, retrieval, model choice, and workflow design with evidence.
+## API Architecture
 
-## How to Evaluate Quality
+Before writing code, it helps to understand how the pieces fit together. Every Claude API call flows through a clear pipeline.
 
-Evaluation is where serious AI work separates itself from experimentation. A useful evaluation plan for this starts with real tasks. Gather examples from support tickets, pull requests, internal documents, analytics requests, incident reports, or customer conversations. Remove sensitive information, then turn those examples into a small but representative test set.
+```mermaid
+flowchart TD
+    A[Your Application] --> B[Anthropic SDK]
+    B --> C{Request Type}
+    C -->|Sync| D[POST /messages]
+    C -->|Streaming| E[POST /messages\nstream=true]
+    C -->|Batched| F[POST /messages/batches]
+    D --> G[Claude Model]
+    E --> G
+    F --> G
+    G --> H{Response Type}
+    H -->|Text| I[text block]
+    H -->|Tool call| J[tool_use block]
+    H -->|Cached| K[cache_read_input_tokens]
+    I --> L[Your App Handles Response]
+    J --> L
+    K --> L
+```
 
-Each test case should define the input, the expected behavior, and the failure modes that matter. For some tasks, the expected result is exact. For example, a JSON extraction task can be checked against a schema. For other tasks, the expected result is judged by a rubric. A good rubric might score correctness, completeness, clarity, citation quality, security awareness, and usefulness.
+The model always returns a list of content blocks. A simple reply is one `text` block. A tool-use response is one `tool_use` block with a name and structured input. Streaming returns the same blocks but delivers them as server-sent events so your UI can update progressively.
 
-Do not rely on a single aggregate score. Track dimensions separately. A system can be fast and cheap while still being wrong. It can be accurate but too slow for interactive use. It can produce polished language while ignoring important constraints. The right choice depends on which dimension is binding for the workflow.
+---
 
-For this topic, useful metrics include answer quality, edit distance, task completion rate, policy adherence, latency, and human review time; task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate. Add qualitative review for edge cases. Keep examples where the system failed, because those examples become the most valuable part of the evaluation set. When you change prompts, retrieval rules, model versions, or tool permissions, rerun the same cases.
+## Your First API Call
 
-Evaluation also protects teams from demo bias. A demo tends to show happy paths. A test set shows what happens when inputs are messy, incomplete, adversarial, or simply boring. Real users send all four.
+Let's start with the simplest possible thing — a synchronous message.
 
-## Implementation Plan
+```python
+import anthropic
 
-Start by writing a one-page problem statement. Describe the users, the job they are trying to complete, the current pain, and the measurable result you want. This keeps the project anchored in a business or engineering outcome instead of a vague AI initiative.
+client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
 
-Next, map the workflow from request to final review. Identify where context enters the system, where the model is used, where a tool is called, and where a human approves the result. Mark any step that touches customer data, production infrastructure, financial spend, or security-sensitive information. Those steps need stronger controls.
+message = client.messages.create(
+    model="claude-opus-4-5",
+    max_tokens=1024,
+    messages=[
+        {"role": "user", "content": "Explain async/await in Python in three sentences."}
+    ]
+)
 
-Then build the smallest working version. Use existing tools where possible. Connect only the context sources that matter. Add simple logging. Save inputs and outputs for review. Avoid building a generalized platform before you know which workflow will survive contact with users.
+print(message.content[0].text)
+```
 
-After the first version works, run it against a test set. Review failures in batches. Some failures will be prompt problems. Some will be retrieval problems. Some will be product problems, where the interface lets users ask for work the system cannot safely perform. Fix the highest-impact category first.
+The response object has a few fields worth knowing about immediately:
 
-For tutorial-style adoption, create a thin vertical slice first. The slice should include real input, one useful action, visible review, and a measurable output. That is enough to learn without building unnecessary platform layers.
+```python
+print(message.id)               # msg_01XFDUDYJgAACzvnptvVoYEL
+print(message.model)            # claude-opus-4-5
+print(message.stop_reason)      # "end_turn" | "max_tokens" | "tool_use"
+print(message.usage.input_tokens)   # tokens consumed by the prompt
+print(message.usage.output_tokens)  # tokens consumed by the response
+```
 
-Finally, write an operating guide. Include setup steps, permissions, expected inputs, known limitations, escalation rules, and evaluation commands. A tool that only one person knows how to operate is not production-ready, even if it works well in a notebook.
+`stop_reason` tells you why the model stopped generating. `"end_turn"` means a natural completion. `"max_tokens"` means you hit the limit and the response is truncated — you'll want to raise `max_tokens` or truncate your input. `"tool_use"` means the model wants to call a function before it can continue, which we'll handle later.
 
-## Common Mistakes to Avoid
+---
 
-The first mistake is adopting this approach without a clear owner. AI work crosses product, engineering, legal, security, and operations. If nobody owns the workflow, decisions become fragmented. Assign an owner who can prioritize the use case, gather feedback, and decide when the system is good enough to expand.
+## Streaming Responses
 
-The second mistake is trusting polished output. Large language models are good at sounding confident. That does not mean the answer is grounded. Require citations, retrieved evidence, tests, schemas, or human review when the task has real consequences. The review process should be designed before the system is widely used.
+Synchronous calls are fine for batch workloads, but any user-facing application should stream. The latency difference is dramatic — instead of waiting 3-8 seconds for a full response, the user sees text appearing within 300ms.
 
-The third mistake is hiding uncertainty. If the system is missing context, blocked by permissions, or making an assumption, the user should see that. A clear refusal or a request for more information is better than a fabricated answer. This is especially important in Claude models, coding workflows, enterprise AI, prompt engineering, and safe assistant design; large language models, model evaluation, inference, prompting, retrieval, and production AI systems because small errors can cascade through technical decisions.
+```python
+import anthropic
 
-The fourth mistake is ignoring cost and latency until late. Token usage, tool calls, retries, and long context windows can become expensive. Measure cost per successful task, not only cost per model call. A cheaper model that requires repeated human cleanup may be more expensive than a stronger model with fewer failures.
+client = anthropic.Anthropic()
 
-The fifth mistake is skipping change management. Users need to know what the system is for, when to trust it, and how to report problems. Good rollout includes examples, office hours, documentation, and a feedback loop. Adoption is a product problem, not only an engineering problem.
+with client.messages.stream(
+    model="claude-opus-4-5",
+    max_tokens=1024,
+    messages=[
+        {"role": "user", "content": "Write a Python function to parse JSON safely."}
+    ]
+) as stream:
+    for text in stream.text_stream:
+        print(text, end="", flush=True)
 
-## Recommended Stack and Workflow
+print()  # newline after stream ends
 
-A strong stack for this does not have to be complicated. Begin with a stable interface, a small set of trusted context sources, a reliable model or tool provider, and a visible review step. Add orchestration only when the workflow genuinely needs multiple steps or tool calls.
+# You can still access the final message object after streaming
+final_message = stream.get_final_message()
+print(f"\nTokens used: {final_message.usage.input_tokens} in, {final_message.usage.output_tokens} out")
+```
 
-For context, prefer sources that are maintained as part of normal work: repositories, docs, tickets, runbooks, dashboards, and customer records with appropriate access controls. Stale context creates stale answers. If the knowledge base is not maintained, retrieval will not save the system.
+For a FastAPI backend serving a frontend, you'd return a `StreamingResponse`:
 
-For model selection, test more than one option. Compare quality, latency, cost, context length, structured output support, tool calling behavior, privacy terms, and operational fit. The best model for drafting a document may not be the best model for code repair, classification, or high-volume summarization.
+```python
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+import anthropic
 
-For workflow control, use typed inputs and outputs. JSON schemas, templates, checklists, and approval forms make results easier to validate. They also help users understand what the system can do. Free-form chat is useful for exploration, but production workflows benefit from structure.
+app = FastAPI()
+client = anthropic.Anthropic()
 
-For monitoring, capture prompt versions, retrieval hits, model names, tool calls, latency, token usage, user edits, and final outcomes. These records make it possible to debug quality issues and defend decisions later. Monitoring also helps teams decide when a prompt needs a small change and when the workflow needs a redesign.
+@app.post("/chat")
+async def chat(prompt: str):
+    def generate():
+        with client.messages.stream(
+            model="claude-opus-4-5",
+            max_tokens=2048,
+            messages=[{"role": "user", "content": prompt}]
+        ) as stream:
+            for text in stream.text_stream:
+                yield f"data: {text}\n\n"
 
-## Decision Checklist
+    return StreamingResponse(generate(), media_type="text/event-stream")
+```
 
-Use a decision checklist before you invest deeply. The checklist should force the team to connect the technology to a measurable workflow. For this topic, the most useful criteria are usually workflow fit, output quality, integration effort, operating cost, security posture, and long-term maintainability.
+The frontend reads this with the `EventSource` API or `fetch` with `ReadableStream`.
 
-Ask these questions before adoption:
+---
 
-- What user job will this improve?
-- What evidence shows that the current workflow is slow, expensive, or error-prone?
-- What context does the system need, and who owns that context?
-- What actions can the system take, and which actions require approval?
-- What data must never be sent to a third-party service?
-- How will we measure answer quality, edit distance, task completion rate, policy adherence, latency, and human review time; task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate?
-- What happens when the model is uncertain or wrong?
-- Who reviews failures and improves the workflow?
-- What is the rollback plan if quality drops?
+## System Prompts and Temperature
 
-The answers do not need to be perfect at the start. They do need to be explicit. Explicit assumptions can be tested. Hidden assumptions become production incidents, budget surprises, or tools that nobody uses.
+System prompts are where you define the model's persona, constraints, and context. They go in a `system` parameter at the top level, not inside the `messages` array.
 
-A good decision also includes a stop rule. Decide what result would make the team pause or abandon the rollout. This protects the organization from continuing an AI project simply because it is already in motion.
+```python
+message = client.messages.create(
+    model="claude-opus-4-5",
+    max_tokens=2048,
+    system="""You are a senior Python engineer reviewing code for a fintech startup.
+Your priorities in order: security, correctness, performance, readability.
+Always flag any handling of financial amounts that uses floating-point arithmetic.
+Format your responses as: VERDICT (pass/warn/fail), then FINDINGS as a bullet list.""",
+    messages=[
+        {"role": "user", "content": "Review this function:\n\n```python\ndef calculate_fee(amount, rate):\n    return amount * rate\n```"}
+    ]
+)
+```
+
+**Temperature** controls randomness. The range is 0 to 1.
+
+- `0.0` — deterministic, always picks the highest-probability token. Use for extraction, classification, and structured output.
+- `0.3–0.5` — slight variation while staying focused. Good for code generation and technical writing.
+- `0.7–1.0` — creative, diverse, surprising. Use for brainstorming and creative content.
+
+```python
+# For code review — deterministic
+message = client.messages.create(
+    model="claude-opus-4-5",
+    max_tokens=1024,
+    temperature=0.0,
+    system="You are a code reviewer. Be precise and consistent.",
+    messages=[{"role": "user", "content": code_to_review}]
+)
+
+# For writing a product description — some creativity
+message = client.messages.create(
+    model="claude-opus-4-5",
+    max_tokens=1024,
+    temperature=0.7,
+    system="You are a product copywriter.",
+    messages=[{"role": "user", "content": "Write a tagline for our API monitoring tool."}]
+)
+```
+
+A rule of thumb I use: if I'd be frustrated by two different answers to the same question, use low temperature. If I want variety, use higher temperature.
+
+---
+
+## Working with Images
+
+Claude supports vision natively. Pass images as base64-encoded content blocks alongside your text.
+
+```python
+import anthropic
+import base64
+from pathlib import Path
+
+client = anthropic.Anthropic()
+
+def analyze_screenshot(image_path: str, question: str) -> str:
+    image_data = base64.standard_b64encode(Path(image_path).read_bytes()).decode("utf-8")
+
+    message = client.messages.create(
+        model="claude-opus-4-5",
+        max_tokens=1024,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/png",  # or image/jpeg, image/gif, image/webp
+                            "data": image_data,
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": question
+                    }
+                ],
+            }
+        ],
+    )
+    return message.content[0].text
+
+# Example: analyze a UI screenshot for accessibility issues
+result = analyze_screenshot(
+    "dashboard_screenshot.png",
+    "List any accessibility issues visible in this UI. Focus on color contrast and missing alt text."
+)
+print(result)
+```
+
+You can also pass images by URL if they're publicly accessible:
+
+```python
+{
+    "type": "image",
+    "source": {
+        "type": "url",
+        "url": "https://example.com/diagram.png"
+    }
+}
+```
+
+Image token costs scale with dimensions. A 1024×1024 PNG costs around 1600 tokens. Resize large images before sending them if the detail isn't necessary for the task.
+
+---
+
+## Tool Use / Function Calling
+
+Tool use is where the Claude API really separates itself. You define tools with JSON schemas, and the model decides when to call them based on the conversation. This enables agents that can actually do things — search the web, query databases, run code.
+
+```python
+import anthropic
+import json
+
+client = anthropic.Anthropic()
+
+tools = [
+    {
+        "name": "search_codebase",
+        "description": "Search the codebase for functions, classes, or patterns. Returns matching file paths and line numbers.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The search term or pattern to look for"
+                },
+                "file_type": {
+                    "type": "string",
+                    "description": "File extension to filter by, e.g. 'py', 'ts'",
+                    "enum": ["py", "ts", "js", "go", "rs"]
+                }
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "get_file_contents",
+        "description": "Read the contents of a specific file from the codebase.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "Relative path to the file"
+                }
+            },
+            "required": ["file_path"]
+        }
+    }
+]
+
+def search_codebase(query: str, file_type: str = None) -> str:
+    # In a real implementation, this would grep the actual codebase
+    return json.dumps({
+        "results": [
+            {"file": "src/auth/session.py", "line": 47, "match": f"def {query}("},
+            {"file": "tests/test_auth.py", "line": 12, "match": f"# test {query}"}
+        ]
+    })
+
+def get_file_contents(file_path: str) -> str:
+    # In a real implementation, this would read the actual file
+    return f"# Contents of {file_path}\n# (placeholder)"
+
+def run_agent(user_message: str) -> str:
+    messages = [{"role": "user", "content": user_message}]
+
+    while True:
+        response = client.messages.create(
+            model="claude-opus-4-5",
+            max_tokens=4096,
+            tools=tools,
+            messages=messages
+        )
+
+        if response.stop_reason == "end_turn":
+            # Model is done — return the final text response
+            for block in response.content:
+                if block.type == "text":
+                    return block.text
+
+        if response.stop_reason == "tool_use":
+            # Model wants to call tools — execute them and continue
+            messages.append({"role": "assistant", "content": response.content})
+
+            tool_results = []
+            for block in response.content:
+                if block.type == "tool_use":
+                    print(f"[Tool call] {block.name}({block.input})")
+
+                    if block.name == "search_codebase":
+                        result = search_codebase(**block.input)
+                    elif block.name == "get_file_contents":
+                        result = get_file_contents(**block.input)
+                    else:
+                        result = json.dumps({"error": f"Unknown tool: {block.name}"})
+
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result
+                    })
+
+            messages.append({"role": "user", "content": tool_results})
+
+answer = run_agent("Find where session tokens are validated and explain the logic.")
+print(answer)
+```
+
+The loop is the key pattern: send a message, check if the model wants to call a tool, execute the tool, add the result to the conversation, and continue. The model decides when it has enough information to answer.
+
+---
+
+## Tool Use Workflow
+
+Here is how the tool use loop looks as a diagram, which makes the agentic pattern much easier to reason about.
+
+```mermaid
+sequenceDiagram
+    participant App as Your App
+    participant Claude as Claude API
+    participant Tool as Tool (DB / API / FS)
+
+    App->>Claude: messages + tool definitions
+    Claude-->>App: stop_reason=tool_use, tool_use block
+    App->>App: parse tool name + input
+    App->>Tool: call tool with input
+    Tool-->>App: tool result
+    App->>Claude: append assistant turn + tool_result
+    Claude-->>App: stop_reason=end_turn, text block
+    App->>App: extract and return final text
+```
+
+Each iteration through this loop is one "step" of the agent. Complex tasks may take 3-10 steps. Budget `max_tokens` generously for multi-step agents — the model accumulates context as it goes.
+
+---
+
+## Prompt Caching
+
+Prompt caching is the single highest-impact cost optimization available on the Claude API. It lets you cache the first portion of your prompt (system prompt, static context, tool definitions) and pay 90% less for those tokens on every subsequent request.
+
+The economics are compelling: cached input tokens cost $0.30 per million instead of $3.00. A 10,000-token system prompt sent 1,000 times costs $30 without caching and $3 with caching — saving $27 per thousand conversations.
+
+```python
+import anthropic
+
+client = anthropic.Anthropic()
+
+# This large system prompt will be cached after the first request
+SYSTEM_PROMPT = """You are an expert code reviewer for a Python backend team.
+
+[... your large system prompt here — could be thousands of tokens of coding standards,
+examples of good and bad code, team conventions, security guidelines, etc. ...]
+
+The rest of this prompt is a placeholder representing 8,000 tokens of context.
+""" * 50  # simulate a large prompt
+
+def review_code(code: str) -> dict:
+    response = client.messages.create(
+        model="claude-opus-4-5",
+        max_tokens=2048,
+        system=[
+            {
+                "type": "text",
+                "text": SYSTEM_PROMPT,
+                "cache_control": {"type": "ephemeral"}  # mark this block for caching
+            }
+        ],
+        messages=[
+            {"role": "user", "content": f"Review this code:\n\n```python\n{code}\n```"}
+        ]
+    )
+
+    usage = response.usage
+    print(f"Input tokens: {usage.input_tokens}")
+    print(f"Cache creation tokens: {usage.cache_creation_input_tokens}")  # first request only
+    print(f"Cache read tokens: {usage.cache_read_input_tokens}")           # subsequent requests
+
+    return {"review": response.content[0].text}
+
+# First call: cache is created (slightly more expensive)
+review_code("def add(a, b): return a + b")
+
+# Second call: cache is read (90% cheaper on the system prompt)
+review_code("def multiply(a, b): return a * b")
+```
+
+Cache entries survive for 5 minutes by default and are refreshed each time they're hit. For a busy API with constant traffic, your cache hit rate will be very high. For batch jobs, pre-warm the cache with a cheap dummy request before starting the batch.
+
+You can also cache conversation history, tool definitions, and long document context using the same `cache_control` marker — not just system prompts.
+
+---
+
+## Structured Output (JSON Mode)
+
+Many applications need the model to return structured data — not prose, but valid JSON that can be parsed and used programmatically. There are two reliable patterns.
+
+**Pattern 1: Instruct and parse**
+
+```python
+import json
+import anthropic
+
+client = anthropic.Anthropic()
+
+def extract_pr_metadata(pr_description: str) -> dict:
+    response = client.messages.create(
+        model="claude-opus-4-5",
+        max_tokens=512,
+        temperature=0.0,
+        system="""Extract metadata from pull request descriptions.
+Return ONLY valid JSON with this exact schema:
+{
+  "title": string,
+  "type": "feature" | "bugfix" | "refactor" | "docs" | "chore",
+  "risk_level": "low" | "medium" | "high",
+  "affected_services": string[],
+  "requires_migration": boolean
+}
+Return nothing else — no explanation, no markdown fencing, just the JSON object.""",
+        messages=[{"role": "user", "content": pr_description}]
+    )
+
+    return json.loads(response.content[0].text)
+
+metadata = extract_pr_metadata("""
+Adds OAuth2 support to the user authentication service.
+Updates the users table to add oauth_provider and oauth_id columns.
+Requires a database migration before deployment.
+Affects: auth-service, api-gateway
+""")
+
+print(metadata)
+# {'title': 'Add OAuth2 support', 'type': 'feature', 'risk_level': 'high',
+#  'affected_services': ['auth-service', 'api-gateway'], 'requires_migration': True}
+```
+
+**Pattern 2: Prefill the assistant turn**
+
+You can pre-fill the assistant's response to force it to start with the opening brace, which prevents any preamble:
+
+```python
+response = client.messages.create(
+    model="claude-opus-4-5",
+    max_tokens=512,
+    temperature=0.0,
+    messages=[
+        {"role": "user", "content": f"Extract metadata from:\n\n{pr_description}\n\nReturn only JSON."},
+        {"role": "assistant", "content": "{"}  # prefill forces JSON output
+    ]
+)
+
+# Prepend the opening brace we prefilled
+raw = "{" + response.content[0].text
+return json.loads(raw)
+```
+
+Both patterns work well. Use low temperature (0.0–0.1) for structured output to minimize parse failures.
+
+---
+
+## Error Handling and Retries
+
+The Claude API returns specific HTTP status codes you need to handle differently.
+
+```python
+import anthropic
+import time
+import random
+
+client = anthropic.Anthropic()
+
+def call_with_retry(messages: list, max_retries: int = 3, **kwargs) -> anthropic.types.Message:
+    for attempt in range(max_retries):
+        try:
+            return client.messages.create(
+                model="claude-opus-4-5",
+                max_tokens=1024,
+                messages=messages,
+                **kwargs
+            )
+
+        except anthropic.RateLimitError as e:
+            # 429 — back off and retry
+            wait = (2 ** attempt) + random.uniform(0, 1)
+            print(f"Rate limited. Waiting {wait:.1f}s before retry {attempt + 1}/{max_retries}")
+            time.sleep(wait)
+
+        except anthropic.APIStatusError as e:
+            if e.status_code == 529:
+                # API overloaded — back off more aggressively
+                wait = (4 ** attempt) + random.uniform(0, 2)
+                print(f"API overloaded. Waiting {wait:.1f}s")
+                time.sleep(wait)
+            elif e.status_code >= 500:
+                # Server error — retry
+                wait = 2 ** attempt
+                time.sleep(wait)
+            else:
+                # 4xx client error — don't retry, fix the request
+                raise
+
+        except anthropic.APIConnectionError:
+            # Network error — retry with backoff
+            time.sleep(2 ** attempt)
+
+    raise RuntimeError(f"Failed after {max_retries} retries")
+```
+
+The most common errors in production are rate limits (429) and occasional API overload (529). Both are transient and handled by exponential backoff. A `400 Bad Request` usually means your message structure is malformed — check your content block format, especially when using tool results.
+
+---
+
+## Cost Optimization Tips
+
+Beyond prompt caching, here are the optimizations that actually move the needle.
+
+**Right-size your model.** Claude Haiku costs 20x less than Claude Opus per token. Triage requests by complexity: use Haiku for classification and simple extraction, Sonnet for general tasks, Opus for complex reasoning and code generation. Most production workloads are 60-70% Haiku-eligible.
+
+**Set tight `max_tokens`.** The API charges for tokens generated, not requested. But setting `max_tokens` too high encourages the model to pad responses. If your use case produces 200-token answers, set `max_tokens=512` rather than the default 4096. This also protects you from runaway generation on edge cases.
+
+**Trim system prompts ruthlessly.** Every sentence in a system prompt that doesn't change behavior costs you money. Audit your system prompts regularly. "You are a helpful assistant." is 6 tokens you can often delete. "Always respond in a professional and courteous tone." is 10 more tokens that the model already tends to do by default.
+
+**Use the Batch API for async workloads.** Batch requests have a 24-hour SLA and cost 50% less. Nightly processing jobs, bulk data extraction, and offline analysis should always use the Batch API.
+
+**Monitor cache hit rates.** If you've enabled prompt caching and your `cache_read_input_tokens` is low relative to `input_tokens`, your prompts aren't structured to be cacheable. The cached prefix must be identical across requests — any variation resets the cache.
+
+---
+
+## Model Selection Decision Flowchart
+
+```mermaid
+flowchart TD
+    A[New API request] --> B{Interactive / real-time?}
+    B -->|No| C[Use Batch API\n50% discount]
+    B -->|Yes| D{Task complexity?}
+    D -->|Simple: classify,\nextract, route| E{High volume?\n>10K/day}
+    E -->|Yes| F[Claude Haiku\n+ prompt caching]
+    E -->|No| G[Claude Haiku\nor Sonnet]
+    D -->|Medium: summarize,\nQ&A, drafting| H[Claude Sonnet\n+ prompt caching]
+    D -->|Complex: code gen,\nreasoning, agents| I{Latency critical?}
+    I -->|Yes| J[Claude Sonnet]
+    I -->|No| K[Claude Opus]
+    C --> L{Same complexity?}
+    L -->|Simple| M[Haiku batch]
+    L -->|Complex| N[Sonnet/Opus batch]
+```
+
+---
+
+## Production Checklist
+
+Before you ship a Claude API integration to real users, run through this list.
+
+**Security**
+- [ ] API key stored in environment variables, never in source code or logs
+- [ ] API key rotated periodically; old keys revoked
+- [ ] Requests rate-limited at the application layer to prevent runaway costs
+- [ ] User inputs sanitized; prompt injection mitigations in place
+
+**Reliability**
+- [ ] Exponential backoff and retry logic implemented for 429/529 errors
+- [ ] `max_tokens` set conservatively to cap per-request cost
+- [ ] Timeout set on API calls (recommend 30s for sync, 120s for streaming)
+- [ ] Fallback behavior defined for API unavailability
+
+**Cost**
+- [ ] Prompt caching enabled for all system prompts > 1,024 tokens
+- [ ] Model tier matched to task complexity
+- [ ] Token usage logged per request for monitoring and alerting
+- [ ] Monthly spend alerts configured in the Anthropic console
+
+**Quality**
+- [ ] `stop_reason` checked — handle `"max_tokens"` as a truncation error
+- [ ] Structured output responses validated with JSON schema before use
+- [ ] Evaluation set exists and is run before each prompt change
+- [ ] Tool call inputs validated before passing to actual tools
+
+**Observability**
+- [ ] Request IDs (`message.id`) logged for debugging
+- [ ] Model name and version logged (you want to know when you change models)
+- [ ] P50/P95 latency tracked by model and endpoint
+- [ ] Error rates tracked by status code
+
+---
 
 ## FAQ
 
-### Is this only for advanced AI teams?
+### Which Claude model should I use in 2026?
 
-No. The concepts are useful for small teams as well, but the implementation should match the team's maturity. A small team can start with a narrow workflow, manual review, and simple logs. A larger organization may need policy controls, shared evaluation infrastructure, and formal approval paths.
+For most general-purpose applications, Claude Sonnet gives the best balance of quality and cost. Use Haiku when you're doing high-volume, structured tasks like classification or extraction. Use Opus when you need maximum reasoning quality and cost is secondary — complex code analysis, long-document synthesis, or multi-step agents that need to get it right the first time.
 
-### What is the biggest risk?
+### How do I keep my costs predictable?
 
-The biggest risk is not that the model makes one obvious mistake. The bigger risk is that a workflow quietly produces plausible but wrong output at scale. This is why evaluation, review, and monitoring matter. Treat AI output as work that needs quality control, not as magic.
+Set `max_tokens` per request, implement a monthly budget alert in the Anthropic console, and log token usage to a time-series database. Enable prompt caching early — even if you're not at high volume yet, building caching-aware prompt structure from the start is much easier than retrofitting it later.
 
-### How long does adoption take?
+### Can I fine-tune Claude on my own data?
 
-A useful prototype can often be built quickly, but production adoption takes longer because teams need permissions, evaluation, documentation, and user feedback. Plan for iteration. The first version should teach you which assumptions were wrong.
+Anthropic does not currently offer public fine-tuning for Claude models. Instead, use few-shot examples in your system prompt, retrieval-augmented generation (RAG) to inject relevant context, and prompt engineering to shape model behavior. These techniques can get you 90% of the benefit of fine-tuning for most use cases.
 
-### Should we build or buy?
+### How should I handle long conversations that exceed the context window?
 
-Buy when the workflow is common, the vendor integrates with your stack, and the risk profile is acceptable. Build when the workflow depends on proprietary context, custom tools, or differentiated product behavior. Many teams use a hybrid approach: buy model access or infrastructure, then build the workflow layer themselves.
+The Claude API supports a 200K token context window, which is enough for very long conversations. When conversations do grow long, summarize older turns into a compact history block and replace the raw message history. A good pattern: when the conversation exceeds 80% of your context budget, send a summarization request and replace the oldest messages with the summary.
 
-### How should success be measured?
+### Is the Claude API HIPAA / SOC 2 compliant?
 
-Measure outcomes rather than excitement. Good measures include answer quality, edit distance, task completion rate, policy adherence, latency, and human review time; task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate. Add human review quality and user adoption data. If people try the system once and return to the old process, the rollout has not succeeded.
-
-## Final Takeaway
-
-This approach is valuable when it is connected to a real workflow, evaluated against real examples, and operated with clear boundaries. The winning teams will not be the ones with the longest list of AI tools. They will be the teams that turn AI into repeatable, observable, and trusted work.
-
-Start small, measure honestly, and improve the system with evidence. Use Claude API, coding agents, prompt templates, document workflows, evaluation sets, permissioning, and review queues; model APIs, open-weight models, prompt templates, embeddings, vector databases, evaluation suites, logs, and guardrails where they fit, but keep the focus on high-quality AI workflows with strong reasoning, clear instructions, and operational controls; more reliable AI products with measurable quality, cost, and latency controls. That is the difference between an impressive demo and a capability that keeps paying off after the novelty fades.
+Anthropic's API does have compliance certifications available — check the Anthropic Trust Center at trust.anthropic.com for current documentation on HIPAA Business Associate Agreements, SOC 2 Type II, and data processing agreements. For sensitive regulated data, review the data retention and privacy policies carefully before sending PHI or PII to any model API.

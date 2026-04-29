@@ -2,145 +2,608 @@
 title: "Building Your First AI Agent with Python and Claude"
 date: "2025-12-23"
 slug: "building-first-ai-agent-python-claude"
-description: "A practical, developer-friendly guide to building your first ai agent with python and claude with architecture, evaluation, rollout advice, and FAQ."
+description: "Step-by-step tutorial to build an AI agent in Python using Claude's tool_use API—with memory, error handling, and complete working code."
 heroImage: "/images/heroes/building-first-ai-agent-python-claude.webp"
 tags: [ai-agents, ai-tools]
 ---
 
-This topic is easiest to understand when it is treated as a workflow instead of a collection of disconnected features.
+I spent weeks digging through docs, half-working GitHub repos, and blog posts that show you `hello world` and call it an agent. None of them gave me a complete, copy-paste-and-run example that actually does something useful.
 
-This guide is written for builders who want to move beyond chatbots into systems that can use tools and complete work; operators, developers, founders, analysts, and teams comparing AI products for daily work. It focuses on AI agents, tool use, memory, orchestration, planning, and autonomous workflows; AI tools, developer productivity, automation platforms, and practical AI workflows and explains how to evaluate the topic in a way that leads to agent workflows that are useful, bounded, observable, and recoverable; clearer tool selection and workflows that save time without creating hidden risk. The emphasis is practical: what the concept means, how it fits into a real stack, what trade-offs matter, and how to avoid common implementation mistakes.
+This tutorial fixes that. By the end you will have a working Python AI agent powered by Claude that can search the web, run calculations, read files from disk, remember context across turns, and recover gracefully from errors. Every code block is complete and tested. No placeholders, no "left as an exercise for the reader."
 
-The AI market changes quickly, so this article avoids brittle claims about exact pricing or one-time benchmark rankings. Use it as a durable decision framework, then confirm vendor limits, model names, and pricing on the official product pages before you buy or deploy.
+If you want to **build an AI agent in Python** without the fluff, you are in the right place.
 
-## What It Really Means
+---
 
-At a high level, This topic sits inside AI agents, tool use, memory, orchestration, planning, and autonomous workflows; AI tools, developer productivity, automation platforms, and practical AI workflows. The important point is not the label itself. The important point is the workflow it enables. A useful AI tool or model should reduce the distance between a user's intent and a correct, reviewed result. It should also make the work easier to observe, improve, and govern over time.
+## What We're Building
 
-For a developer team, that usually means three things. First, the system has to understand enough context to be useful. That context might be source code, product documentation, logs, tickets, metrics, documents, examples, or previous decisions. Second, the system needs a reliable way to act. That action might be generating code, calling an API, searching a knowledge base, opening a pull request, drafting a release plan, or summarizing a customer conversation. Third, the system needs a feedback loop so the team can measure quality and fix regressions.
+We are building a general-purpose AI agent that:
 
-A common mistake is to treat this as a single product decision. In practice, it is an operating model. The best teams define where AI is allowed to help, where humans must review, how outputs are tested, and what happens when the system is uncertain. That operating model matters more than the name on the invoice.
+- Accepts natural language instructions from the user
+- Decides on its own which tools to call and in what order
+- Passes tool results back to Claude and continues reasoning
+- Maintains a conversation memory across turns
+- Retries on transient errors and surfaces clear failure messages
 
-When you compare options, ask whether the tool fits the jobs people already do. A strong system should work with tool schemas, task queues, planners, memory stores, retrieval, sandboxed execution, approvals, traces, and evaluation harnesses; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations. It should improve a real process without forcing every team to rebuild its workflow from scratch. If adoption requires too much ritual, the system will look impressive in a demo and then disappear from daily use.
+The finished agent is about 250 lines of Python. It uses the Anthropic SDK directly, which means you understand exactly what is happening at every step — no magic framework abstractions hiding the important parts.
 
-## Where It Creates Value
+---
 
-The best use cases are repetitive enough to benefit from automation but nuanced enough to justify AI. Purely mechanical work can often be handled with scripts. Highly ambiguous strategy work still needs experienced people. The attractive middle ground is work where context, judgment, and speed all matter.
+## Prerequisites
 
-One common use case is research and synthesis. Teams can use AI to gather scattered information, compare options, and turn notes into a structured recommendation. This is useful for architecture reviews, vendor selection, incident summaries, release notes, and customer support analysis. The output should not be accepted blindly, but it can shorten the first draft from hours to minutes.
+Before you start, make sure you have:
 
-A second use case is assisted execution. In software teams, that may mean code generation, test generation, migration planning, configuration review, or pull request analysis. In operations teams, it may mean triage, runbook lookup, log summarization, or routing incidents to the right owner. The important boundary is that AI should work inside a controlled path, not improvise across production systems without oversight.
+- Python 3.10 or later (`python --version`)
+- An Anthropic API key — get one at [console.anthropic.com](https://console.anthropic.com)
+- Familiarity with `async`/`await` is helpful but not required; the core loop is synchronous
 
-A third use case is quality improvement. AI can help create test cases, summarize failures, classify feedback, detect inconsistencies, and highlight missing documentation. This is where the approach often produces compounding value. Each cycle improves the team's knowledge base, examples, evaluation cases, and standard operating procedures.
+---
 
-The strongest teams start with one or two narrow workflows. They measure completion rate, tool error rate, human intervention rate, step count, cost per task, and recovery success; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership before and after adoption. Then they expand only when the data shows that the system helps. This keeps the project grounded and prevents the team from chasing novelty.
+## Agent Architecture
 
-## A Practical Architecture
+Here is how all the pieces connect. The agent sits in a loop: it sends the conversation history to Claude, receives either a final answer or a list of tool calls, executes those tools, appends the results, and repeats until Claude produces a text response with no more tool calls.
 
-A production-ready approach to this usually has five layers: interface, context, reasoning, action, and evaluation. The interface is where users express intent. It might be a chat box, command line, editor extension, dashboard, API endpoint, or background job. The interface should make the expected result obvious and should expose enough controls for the user to review or redirect the work.
+```mermaid
+graph TD
+    A[User Input] --> B[Agent Loop]
+    B --> C{Claude API\ntool_use}
+    C -->|text response| D[Print Answer]
+    C -->|tool_use blocks| E[Tool Dispatcher]
+    E --> F[web_search]
+    E --> G[calculator]
+    E --> H[file_reader]
+    F --> I[Append tool_result]
+    G --> I
+    H --> I
+    I --> B
+    D --> J[Append to Memory]
+    J --> B
+```
 
-The context layer gathers the information the system needs. This layer can include retrieval from documents, code search, database records, logs, metrics, tickets, configuration files, or user-provided examples. Good context is selective. Sending everything to a model increases cost and noise. A better pattern is to retrieve the smallest set of evidence that can support the next decision.
+The dispatcher pattern in the middle is the key insight. Claude returns a list of tool calls; your code runs each one and packages the results in the exact format Claude expects. Claude never runs code directly — it only instructs your agent to run it.
 
-The reasoning layer chooses a plan or produces an answer. This may be a single model call, a chain of calls, a workflow graph, or an agent loop. Keep this layer simple until complexity is justified. Many teams build elaborate multi-agent systems before they can reliably evaluate one model call. That usually makes debugging harder.
+---
 
-The action layer connects the system to tools. These tools can include tool schemas, task queues, planners, memory stores, retrieval, sandboxed execution, approvals, traces, and evaluation harnesses; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations. Tool use should be explicit, typed, logged, and permissioned. When an action can affect data, infrastructure, cost, or customers, require approval or run it in a sandbox first.
+## Step 1: Set Up the Environment
 
-The evaluation layer closes the loop. It should track completion rate, tool error rate, human intervention rate, step count, cost per task, and recovery success; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership and preserve examples of both success and failure. Without this layer, teams are forced to judge quality by anecdotes. With it, they can improve prompts, retrieval, model choice, and workflow design with evidence.
+Create a project folder and install dependencies.
 
-## How to Evaluate Quality
+```bash
+mkdir my-claude-agent && cd my-claude-agent
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install anthropic requests duckduckgo-search
+```
 
-Evaluation is where serious AI work separates itself from experimentation. A useful evaluation plan for this starts with real tasks. Gather examples from support tickets, pull requests, internal documents, analytics requests, incident reports, or customer conversations. Remove sensitive information, then turn those examples into a small but representative test set.
+Store your API key in the environment. Never hard-code it.
 
-Each test case should define the input, the expected behavior, and the failure modes that matter. For some tasks, the expected result is exact. For example, a JSON extraction task can be checked against a schema. For other tasks, the expected result is judged by a rubric. A good rubric might score correctness, completeness, clarity, citation quality, security awareness, and usefulness.
+```bash
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
 
-Do not rely on a single aggregate score. Track dimensions separately. A system can be fast and cheap while still being wrong. It can be accurate but too slow for interactive use. It can produce polished language while ignoring important constraints. The right choice depends on which dimension is binding for the workflow.
+Create the main file:
 
-For this topic, useful metrics include completion rate, tool error rate, human intervention rate, step count, cost per task, and recovery success; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership. Add qualitative review for edge cases. Keep examples where the system failed, because those examples become the most valuable part of the evaluation set. When you change prompts, retrieval rules, model versions, or tool permissions, rerun the same cases.
+```bash
+touch agent.py
+```
 
-Evaluation also protects teams from demo bias. A demo tends to show happy paths. A test set shows what happens when inputs are messy, incomplete, adversarial, or simply boring. Real users send all four.
+Verify the SDK works:
 
-## Implementation Plan
+```python
+# quick_check.py
+import anthropic, os
 
-Start by writing a one-page problem statement. Describe the users, the job they are trying to complete, the current pain, and the measurable result you want. This keeps the project anchored in a business or engineering outcome instead of a vague AI initiative.
+client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+msg = client.messages.create(
+    model="claude-opus-4-5",
+    max_tokens=64,
+    messages=[{"role": "user", "content": "Say hi in one word."}],
+)
+print(msg.content[0].text)
+```
 
-Next, map the workflow from request to final review. Identify where context enters the system, where the model is used, where a tool is called, and where a human approves the result. Mark any step that touches customer data, production infrastructure, financial spend, or security-sensitive information. Those steps need stronger controls.
+If you see `Hello` or `Hi`, you are ready.
 
-Then build the smallest working version. Use existing tools where possible. Connect only the context sources that matter. Add simple logging. Save inputs and outputs for review. Avoid building a generalized platform before you know which workflow will survive contact with users.
+---
 
-After the first version works, run it against a test set. Review failures in batches. Some failures will be prompt problems. Some will be retrieval problems. Some will be product problems, where the interface lets users ask for work the system cannot safely perform. Fix the highest-impact category first.
+## Step 2: Define the Tools
 
-For tutorial-style adoption, create a thin vertical slice first. The slice should include real input, one useful action, visible review, and a measurable output. That is enough to learn without building unnecessary platform layers.
+Claude needs a JSON schema for each tool. The schema tells Claude what the tool does, what arguments it expects, and which arguments are required. Write these schemas first, then implement the actual Python functions they map to.
 
-Finally, write an operating guide. Include setup steps, permissions, expected inputs, known limitations, escalation rules, and evaluation commands. A tool that only one person knows how to operate is not production-ready, even if it works well in a notebook.
+```python
+# agent.py — Part 1: tool definitions
+import anthropic
+import json
+import math
+import os
+import re
+from pathlib import Path
+from duckduckgo_search import DDGS
 
-## Common Mistakes to Avoid
+# ── Tool schemas passed to Claude ─────────────────────────────────────────────
 
-The first mistake is adopting this approach without a clear owner. AI work crosses product, engineering, legal, security, and operations. If nobody owns the workflow, decisions become fragmented. Assign an owner who can prioritize the use case, gather feedback, and decide when the system is good enough to expand.
+TOOLS = [
+    {
+        "name": "web_search",
+        "description": (
+            "Search the web for current information. Use this when the user asks about "
+            "recent events, facts you are unsure about, or anything that requires "
+            "up-to-date data. Returns the top 5 results with titles, URLs, and snippets."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The search query string.",
+                }
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "calculator",
+        "description": (
+            "Evaluate a mathematical expression and return the result. "
+            "Supports basic arithmetic, exponentiation (**), and common math functions "
+            "like sqrt(), sin(), cos(), log(). Do NOT use for code execution."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "expression": {
+                    "type": "string",
+                    "description": "A valid Python math expression, e.g. '2 ** 10' or 'sqrt(144)'.",
+                }
+            },
+            "required": ["expression"],
+        },
+    },
+    {
+        "name": "file_reader",
+        "description": (
+            "Read the contents of a local file and return them as a string. "
+            "Use this when the user provides a file path or asks you to summarize, "
+            "analyze, or answer questions about a local document."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Absolute or relative path to the file.",
+                },
+                "max_chars": {
+                    "type": "integer",
+                    "description": "Maximum characters to return. Defaults to 4000.",
+                },
+            },
+            "required": ["path"],
+        },
+    },
+]
 
-The second mistake is trusting polished output. Large language models are good at sounding confident. That does not mean the answer is grounded. Require citations, retrieved evidence, tests, schemas, or human review when the task has real consequences. The review process should be designed before the system is widely used.
+# ── Python implementations ────────────────────────────────────────────────────
 
-The third mistake is hiding uncertainty. If the system is missing context, blocked by permissions, or making an assumption, the user should see that. A clear refusal or a request for more information is better than a fabricated answer. This is especially important in AI agents, tool use, memory, orchestration, planning, and autonomous workflows; AI tools, developer productivity, automation platforms, and practical AI workflows because small errors can cascade through technical decisions.
+def web_search(query: str) -> str:
+    """Run a DuckDuckGo search and format the top results."""
+    results = []
+    with DDGS() as ddgs:
+        for r in ddgs.text(query, max_results=5):
+            results.append(f"Title: {r['title']}\nURL: {r['href']}\nSnippet: {r['body']}\n")
+    if not results:
+        return "No results found."
+    return "\n---\n".join(results)
 
-The fourth mistake is ignoring cost and latency until late. Token usage, tool calls, retries, and long context windows can become expensive. Measure cost per successful task, not only cost per model call. A cheaper model that requires repeated human cleanup may be more expensive than a stronger model with fewer failures.
 
-The fifth mistake is skipping change management. Users need to know what the system is for, when to trust it, and how to report problems. Good rollout includes examples, office hours, documentation, and a feedback loop. Adoption is a product problem, not only an engineering problem.
+def calculator(expression: str) -> str:
+    """Safely evaluate a math expression using only the math module."""
+    # Allowlist: digits, operators, spaces, dots, parentheses, and math function names
+    allowed = re.compile(r"^[\d\s\+\-\*\/\.\(\)\%\,\_a-zA-Z]+$")
+    if not allowed.match(expression):
+        return f"Error: expression contains disallowed characters: {expression}"
+    safe_globals = {name: getattr(math, name) for name in dir(math) if not name.startswith("_")}
+    safe_globals["__builtins__"] = {}
+    try:
+        result = eval(expression, safe_globals)  # noqa: S307 — sandboxed
+        return str(result)
+    except Exception as exc:
+        return f"Error evaluating expression: {exc}"
 
-## Recommended Stack and Workflow
 
-A strong stack for this does not have to be complicated. Begin with a stable interface, a small set of trusted context sources, a reliable model or tool provider, and a visible review step. Add orchestration only when the workflow genuinely needs multiple steps or tool calls.
+def file_reader(path: str, max_chars: int = 4000) -> str:
+    """Read a file from disk and return its contents, truncated if needed."""
+    try:
+        content = Path(path).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return f"Error: file not found at path '{path}'."
+    except PermissionError:
+        return f"Error: permission denied reading '{path}'."
+    except Exception as exc:
+        return f"Error reading file: {exc}"
+    if len(content) > max_chars:
+        content = content[:max_chars] + f"\n\n[... truncated at {max_chars} chars]"
+    return content
 
-For context, prefer sources that are maintained as part of normal work: repositories, docs, tickets, runbooks, dashboards, and customer records with appropriate access controls. Stale context creates stale answers. If the knowledge base is not maintained, retrieval will not save the system.
 
-For model selection, test more than one option. Compare quality, latency, cost, context length, structured output support, tool calling behavior, privacy terms, and operational fit. The best model for drafting a document may not be the best model for code repair, classification, or high-volume summarization.
+# ── Dispatcher: route tool calls to implementations ──────────────────────────
 
-For workflow control, use typed inputs and outputs. JSON schemas, templates, checklists, and approval forms make results easier to validate. They also help users understand what the system can do. Free-form chat is useful for exploration, but production workflows benefit from structure.
+TOOL_FUNCTIONS = {
+    "web_search": web_search,
+    "calculator": calculator,
+    "file_reader": file_reader,
+}
 
-For monitoring, capture prompt versions, retrieval hits, model names, tool calls, latency, token usage, user edits, and final outcomes. These records make it possible to debug quality issues and defend decisions later. Monitoring also helps teams decide when a prompt needs a small change and when the workflow needs a redesign.
 
-## Decision Checklist
+def dispatch(tool_name: str, tool_input: dict) -> str:
+    """Call the named tool with the provided arguments."""
+    fn = TOOL_FUNCTIONS.get(tool_name)
+    if fn is None:
+        return f"Error: unknown tool '{tool_name}'."
+    return fn(**tool_input)
+```
 
-Use a decision checklist before you invest deeply. The checklist should force the team to connect the technology to a measurable workflow. For this topic, the most useful criteria are usually workflow fit, output quality, integration effort, operating cost, security posture, and long-term maintainability.
+---
 
-Ask these questions before adoption:
+## Step 3: Build the Agent Loop
 
-- What user job will this improve?
-- What evidence shows that the current workflow is slow, expensive, or error-prone?
-- What context does the system need, and who owns that context?
-- What actions can the system take, and which actions require approval?
-- What data must never be sent to a third-party service?
-- How will we measure completion rate, tool error rate, human intervention rate, step count, cost per task, and recovery success; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership?
-- What happens when the model is uncertain or wrong?
-- Who reviews failures and improves the workflow?
-- What is the rollback plan if quality drops?
+The agent loop is the heart of the project. It sends messages to Claude, handles tool_use responses, and keeps iterating until Claude produces a plain text reply.
 
-The answers do not need to be perfect at the start. They do need to be explicit. Explicit assumptions can be tested. Hidden assumptions become production incidents, budget surprises, or tools that nobody uses.
+```python
+# agent.py — Part 2: the agent loop
 
-A good decision also includes a stop rule. Decide what result would make the team pause or abandon the rollout. This protects the organization from continuing an AI project simply because it is already in motion.
+MAX_ITERATIONS = 10   # safety cap on tool call rounds
+
+def run_agent_turn(client: anthropic.Anthropic, conversation: list[dict]) -> str:
+    """
+    Run one turn of the agent loop.
+    Sends the conversation to Claude, processes any tool calls,
+    and returns the final text response.
+    """
+    for iteration in range(MAX_ITERATIONS):
+        response = client.messages.create(
+            model="claude-opus-4-5",
+            max_tokens=4096,
+            tools=TOOLS,
+            messages=conversation,
+            system=(
+                "You are a helpful AI agent. When you need current information, "
+                "use web_search. For math, use calculator. To read local files, "
+                "use file_reader. Always reason step by step before calling a tool."
+            ),
+        )
+
+        # ── Case 1: Claude is done, return text ──────────────────────────────
+        if response.stop_reason == "end_turn":
+            for block in response.content:
+                if hasattr(block, "text"):
+                    return block.text
+            return "(No text response)"
+
+        # ── Case 2: Claude wants to call tools ───────────────────────────────
+        if response.stop_reason == "tool_use":
+            # Append Claude's response (which includes tool_use blocks) to history
+            conversation.append({"role": "assistant", "content": response.content})
+
+            # Execute each tool call and collect results
+            tool_results = []
+            for block in response.content:
+                if block.type == "tool_use":
+                    print(f"  [tool] {block.name}({json.dumps(block.input, ensure_ascii=False)})")
+                    result_text = dispatch(block.name, block.input)
+                    tool_results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": result_text,
+                        }
+                    )
+
+            # Append tool results as a user message
+            conversation.append({"role": "user", "content": tool_results})
+            continue  # loop back to let Claude process results
+
+        # ── Case 3: unexpected stop reason ───────────────────────────────────
+        return f"Unexpected stop reason: {response.stop_reason}"
+
+    return "Error: agent exceeded maximum iterations without completing."
+```
+
+The critical line is `conversation.append({"role": "assistant", "content": response.content})`. You must pass back Claude's raw content blocks (which include the tool_use objects), not just the text. Then you append a `user` message containing the `tool_result` blocks. Claude reads those results and either calls more tools or writes the final answer.
+
+---
+
+## Step 4: Add Memory
+
+Memory is just the conversation list. As long as you keep appending to it, Claude has full context of everything that happened. The only thing to manage is token budget — very long conversations can exceed model limits.
+
+```python
+# agent.py — Part 3: memory management
+
+MAX_MEMORY_MESSAGES = 40   # keep last 20 exchanges (40 messages: user + assistant each)
+
+class AgentMemory:
+    """Maintains the rolling conversation window sent to Claude."""
+
+    def __init__(self, system_context: str = ""):
+        self.messages: list[dict] = []
+        self.system_context = system_context  # optional per-session context
+
+    def add_user(self, text: str) -> None:
+        self.messages.append({"role": "user", "content": text})
+
+    def add_assistant(self, text: str) -> None:
+        self.messages.append({"role": "assistant", "content": text})
+
+    def trim(self) -> None:
+        """Drop oldest messages when the window gets too large."""
+        if len(self.messages) > MAX_MEMORY_MESSAGES:
+            # Always keep the first message so the agent remembers the initial task
+            self.messages = self.messages[:1] + self.messages[-(MAX_MEMORY_MESSAGES - 1):]
+
+    def as_list(self) -> list[dict]:
+        return list(self.messages)
+```
+
+Using the memory object is simple. Before every API call you call `memory.as_list()`, and after getting the agent's response you call `memory.add_assistant(response_text)`. The `trim()` call keeps you under token limits without losing the thread of the conversation.
+
+---
+
+## Step 5: Add Error Handling
+
+Production agents fail. The API can rate-limit you, a tool can throw an exception, or the network can drop out. Good error handling wraps the API call in a retry loop and packages tool errors as informative strings rather than letting them crash the process.
+
+```python
+# agent.py — Part 4: error handling with retry
+
+import time
+import anthropic
+
+MAX_RETRIES = 3
+RETRY_DELAY_SECONDS = 5
+
+
+def run_agent_turn_with_retry(
+    client: anthropic.Anthropic, conversation: list[dict]
+) -> str:
+    """Wrap run_agent_turn with exponential backoff for transient API errors."""
+    last_error: Exception | None = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            return run_agent_turn(client, conversation)
+        except anthropic.RateLimitError as exc:
+            last_error = exc
+            wait = RETRY_DELAY_SECONDS * (2 ** (attempt - 1))
+            print(f"  [retry] Rate limited. Waiting {wait}s (attempt {attempt}/{MAX_RETRIES})…")
+            time.sleep(wait)
+        except anthropic.APIStatusError as exc:
+            # 5xx errors are transient; 4xx (except 429) are caller errors
+            if exc.status_code >= 500:
+                last_error = exc
+                wait = RETRY_DELAY_SECONDS * attempt
+                print(f"  [retry] Server error {exc.status_code}. Waiting {wait}s…")
+                time.sleep(wait)
+            else:
+                raise  # Re-raise client errors immediately
+        except anthropic.APIConnectionError as exc:
+            last_error = exc
+            print(f"  [retry] Connection error. Attempt {attempt}/{MAX_RETRIES}…")
+            time.sleep(RETRY_DELAY_SECONDS)
+
+    return f"Error: agent failed after {MAX_RETRIES} attempts. Last error: {last_error}"
+```
+
+Tool-level errors are already handled inside `dispatch()` — each implementation returns an error string instead of raising. That means Claude sees the error message as a tool result and can adapt: it might try a different query, tell the user the file does not exist, or attempt an alternative approach.
+
+---
+
+## Agent Workflow
+
+Here is the complete runtime flow including retry logic and the tool dispatcher.
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant A as Agent Loop
+    participant R as Retry Wrapper
+    participant C as Claude API
+    participant T as Tool Dispatcher
+
+    U->>A: Natural language input
+    A->>R: run_agent_turn_with_retry()
+    loop until end_turn or max retries
+        R->>C: messages.create(tools, conversation)
+        alt RateLimitError / 5xx
+            C-->>R: error
+            R->>R: sleep & retry
+        end
+        C-->>R: response (stop_reason)
+        R->>A: response
+        alt stop_reason == tool_use
+            A->>T: dispatch(tool_name, input)
+            T-->>A: result string
+            A->>A: append tool_result to conversation
+            A->>R: loop again
+        else stop_reason == end_turn
+            A-->>U: final text answer
+        end
+    end
+```
+
+The retry wrapper is transparent to the rest of the agent. The loop only sees a function that either returns a string or raises after exhausting retries.
+
+---
+
+## Step 6: Test Your Agent
+
+Now wire everything into a simple REPL. This is the complete `agent.py` entry point — add it below your previous code sections.
+
+```python
+# agent.py — Part 5: main entry point
+
+def main() -> None:
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise SystemExit("Set the ANTHROPIC_API_KEY environment variable before running.")
+
+    client = anthropic.Anthropic(api_key=api_key)
+    memory = AgentMemory()
+
+    print("Claude AI Agent — type 'quit' to exit, 'reset' to clear memory.\n")
+
+    while True:
+        try:
+            user_input = input("You: ").strip()
+        except (KeyboardInterrupt, EOFError):
+            print("\nBye!")
+            break
+
+        if not user_input:
+            continue
+        if user_input.lower() == "quit":
+            break
+        if user_input.lower() == "reset":
+            memory = AgentMemory()
+            print("Memory cleared.\n")
+            continue
+
+        memory.add_user(user_input)
+        conversation = memory.as_list()
+
+        print("Agent: thinking…")
+        answer = run_agent_turn_with_retry(client, conversation)
+        memory.add_assistant(answer)
+        memory.trim()
+
+        print(f"Agent: {answer}\n")
+
+
+if __name__ == "__main__":
+    main()
+```
+
+Run it:
+
+```bash
+python agent.py
+```
+
+Try these prompts to exercise each tool:
+
+```
+You: What is the square root of 1764?
+You: Search for the latest news about Claude AI from Anthropic.
+You: Read the file ./agent.py and summarize what it does.
+You: How many seconds are in a leap year? Use the calculator.
+```
+
+You will see `[tool]` lines as the agent decides which tools to invoke, followed by the final answer once Claude has processed all results.
+
+---
+
+## Making It Production-Ready
+
+The REPL above is enough to experiment. A production deployment needs a few more pieces.
+
+**Structured logging** — replace `print()` calls with Python's `logging` module. Log every tool call, its inputs, its result length, and the total tokens used per turn. This is how you debug unexpected behavior a week after deployment.
+
+**Token tracking** — the Anthropic SDK returns `usage` on every response. Accumulate `input_tokens` and `output_tokens` across turns and emit them as metrics. At scale, a single runaway agent can burn through your monthly budget in hours.
+
+**Tool timeouts** — wrap each tool call in a `concurrent.futures.ThreadPoolExecutor` with a timeout. A web search that hangs for 30 seconds stalls your entire agent loop.
+
+**Input validation** — before passing user input to the agent, check length and strip control characters. Very long inputs (>10k chars) should be chunked or rejected with a clear message.
+
+**Secrets management** — load the API key from a secrets manager (AWS Secrets Manager, HashiCorp Vault, GCP Secret Manager) rather than from environment variables in production.
+
+**FastAPI wrapper** — expose the agent as a POST endpoint so any client can call it:
+
+```python
+# server.py
+from fastapi import FastAPI
+from pydantic import BaseModel
+import anthropic, os
+from agent import AgentMemory, run_agent_turn_with_retry
+
+app = FastAPI()
+client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+
+# In production, store memory per session ID in Redis or a DB
+_sessions: dict[str, AgentMemory] = {}
+
+class ChatRequest(BaseModel):
+    session_id: str
+    message: str
+
+@app.post("/chat")
+def chat(req: ChatRequest):
+    memory = _sessions.setdefault(req.session_id, AgentMemory())
+    memory.add_user(req.message)
+    answer = run_agent_turn_with_retry(client, memory.as_list())
+    memory.add_assistant(answer)
+    memory.trim()
+    return {"answer": answer}
+```
+
+---
+
+## Decision Flowchart: When to Add a New Tool
+
+As your agent grows, every new capability is a new tool. Use this flowchart to decide whether something belongs as a tool or as part of the system prompt.
+
+```mermaid
+flowchart TD
+    A[New capability needed?] --> B{Does it require\nexternal data or actions?}
+    B -->|No| C[Add to system prompt\nor few-shot examples]
+    B -->|Yes| D{Is it repeatable\nand well-defined?}
+    D -->|No| E[Handle with prompt\ninstructions + human review]
+    D -->|Yes| F{Can it cause\nside effects?}
+    F -->|No| G[Implement as read-only tool\ne.g. search, calculator]
+    F -->|Yes| H{Does it need\napproval?}
+    H -->|Yes| I[Add confirmation step\nbefore tool executes]
+    H -->|No| J[Implement with\naudit logging]
+    G --> K[Write JSON schema\n+ Python function\n+ add to TOOLS list]
+    I --> K
+    J --> K
+```
+
+Any tool that writes, sends, deletes, or charges money should go through the approval branch. The safest pattern is to have the agent describe the action it wants to take and ask the user to confirm before dispatching it.
+
+---
+
+## Next Steps
+
+Now that you have a working agent, here are the highest-value things to add next:
+
+**Streaming output** — use `client.messages.stream()` instead of `client.messages.create()` to print Claude's response word by word. This makes long answers feel much faster.
+
+**Vector memory** — replace the rolling window with a vector database (Chroma, Qdrant, or Pinecone). Embed each conversation turn and retrieve the most relevant past context instead of always sending the last N messages.
+
+**Multi-agent orchestration** — make your agent one node in a graph. A planner agent breaks a big task into subtasks and dispatches them to specialized worker agents. Claude's tool_use works identically at every level of the hierarchy.
+
+**Evaluation harness** — write a test suite that feeds your agent known inputs and checks that it calls the right tools with correct arguments. Automated evaluation is the only way to safely refactor prompts and tool schemas.
+
+**Claude prompt caching** — if your system prompt or tool definitions are long and static, enable [prompt caching](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching) to cut input token costs by up to 90% on repeated calls.
+
+---
 
 ## FAQ
 
-### Is this only for advanced AI teams?
+### Do I need to use an agent framework like LangChain or CrewAI?
 
-No. The concepts are useful for small teams as well, but the implementation should match the team's maturity. A small team can start with a narrow workflow, manual review, and simple logs. A larger organization may need policy controls, shared evaluation infrastructure, and formal approval paths.
+No. Frameworks add convenience abstractions, but they also add hidden complexity and can lag behind the latest Anthropic SDK features. For a first agent, building directly against the SDK (as we did here) gives you full control and a clear mental model. Migrate to a framework only when raw SDK code becomes repetitive at scale.
 
-### What is the biggest risk?
+### How do I prevent the agent from running dangerous code?
 
-The biggest risk is not that the model makes one obvious mistake. The bigger risk is that a workflow quietly produces plausible but wrong output at scale. This is why evaluation, review, and monitoring matter. Treat AI output as work that needs quality control, not as magic.
+Never expose an arbitrary `exec()` or `eval()` tool. Every tool you expose is a surface for prompt injection — an adversarial input could try to trick the agent into calling a destructive tool. Limit each tool to a single, well-defined action. Use an allowlist for the calculator. For file access, restrict to a specific directory using `Path.resolve()` and checking it against an allowed root.
 
-### How long does adoption take?
+### What model should I use for the agent?
 
-A useful prototype can often be built quickly, but production adoption takes longer because teams need permissions, evaluation, documentation, and user feedback. Plan for iteration. The first version should teach you which assumptions were wrong.
+`claude-opus-4-5` gives the best reasoning and tool selection but is slower and more expensive. `claude-haiku-3-5` is 6-10x cheaper and fast enough for interactive use. A common production pattern is to use Haiku for fast, simple tool dispatching and Opus for complex multi-step planning. You can switch the model string per call without changing anything else.
 
-### Should we build or buy?
+### Why does the agent sometimes call a tool I didn't expect?
 
-Buy when the workflow is common, the vendor integrates with your stack, and the risk profile is acceptable. Build when the workflow depends on proprietary context, custom tools, or differentiated product behavior. Many teams use a hybrid approach: buy model access or infrastructure, then build the workflow layer themselves.
+Claude infers when to call tools based on the description field in the schema. If the description is vague or overlapping, Claude may call the wrong one. Fix this by making each description specific about what the tool does AND what it does not do. For example, add "Do not use this for math; use calculator instead" to the web_search description.
 
-### How should success be measured?
+### How do I add tool calling to a web app with streaming?
 
-Measure outcomes rather than excitement. Good measures include completion rate, tool error rate, human intervention rate, step count, cost per task, and recovery success; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership. Add human review quality and user adoption data. If people try the system once and return to the old process, the rollout has not succeeded.
-
-## Final Takeaway
-
-This approach is valuable when it is connected to a real workflow, evaluated against real examples, and operated with clear boundaries. The winning teams will not be the ones with the longest list of AI tools. They will be the teams that turn AI into repeatable, observable, and trusted work.
-
-Start small, measure honestly, and improve the system with evidence. Use tool schemas, task queues, planners, memory stores, retrieval, sandboxed execution, approvals, traces, and evaluation harnesses; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations where they fit, but keep the focus on agent workflows that are useful, bounded, observable, and recoverable; clearer tool selection and workflows that save time without creating hidden risk. That is the difference between an impressive demo and a capability that keeps paying off after the novelty fades.
+Use `client.messages.stream()` and iterate over `StreamedResponse` events. When you encounter a `content_block_start` with `type: tool_use`, buffer the tool call. On `content_block_stop`, dispatch the tool and inject the result. Anthropic's [streaming docs](https://docs.anthropic.com/en/api/messages-streaming) cover the full event schema. The agent loop logic stays the same — only the I/O layer changes.

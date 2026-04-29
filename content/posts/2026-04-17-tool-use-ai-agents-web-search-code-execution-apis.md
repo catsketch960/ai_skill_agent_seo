@@ -2,145 +2,392 @@
 title: "Tool Use in AI Agents: Web Search, Code Execution, and APIs"
 date: "2026-04-17"
 slug: "tool-use-ai-agents-web-search-code-execution-apis"
-description: "A practical, developer-friendly guide to tool use in ai agents: web search, code execution, and apis with architecture, evaluation, rollout advice, and FAQ."
+description: "How LLM tool use works in practice: web search, code execution, API calls, and file ops — with working code for Claude and OpenAI, security tips, and MCP."
 heroImage: "/images/heroes/tool-use-ai-agents-web-search-code-execution-apis.webp"
 tags: [ai-agents, ai-tools]
 ---
 
-This topic is a practical topic for teams that want AI to create durable value instead of short demos.
+I have spent the last year building AI agents that actually ship to production. The single biggest leverage point is not the model — it is tool use. A bare language model can reason and generate text. Give it tools, and it can look things up, run code, call APIs, and complete real work. This guide explains exactly how LLM tool use works, how to implement it with Claude and OpenAI, and how to avoid the mistakes I made so you do not have to repeat them.
 
-This guide is written for builders who want to move beyond chatbots into systems that can use tools and complete work; operators, developers, founders, analysts, and teams comparing AI products for daily work. It focuses on AI agents, tool use, memory, orchestration, planning, and autonomous workflows; AI tools, developer productivity, automation platforms, and practical AI workflows and explains how to evaluate the topic in a way that leads to agent workflows that are useful, bounded, observable, and recoverable; clearer tool selection and workflows that save time without creating hidden risk. The emphasis is practical: what the concept means, how it fits into a real stack, what trade-offs matter, and how to avoid common implementation mistakes.
+## What Is Tool Use?
 
-The AI market changes quickly, so this article avoids brittle claims about exact pricing or one-time benchmark rankings. Use it as a durable decision framework, then confirm vendor limits, model names, and pricing on the official product pages before you buy or deploy.
+Tool use (also called function calling) is the mechanism that lets a language model request external actions during inference. Instead of generating a final answer directly, the model can emit a structured call — "search the web for X," "run this Python snippet," "call this REST endpoint" — pause its generation, receive the result, and then continue reasoning with fresh data.
 
-## What It Really Means
+The key insight is that the model does not actually execute anything. It only produces a specification of what it wants to do. Your application code intercepts that specification, runs the tool, and sends the result back as a new message. The model is stateless; the tool loop is your responsibility.
 
-At a high level, This topic sits inside AI agents, tool use, memory, orchestration, planning, and autonomous workflows; AI tools, developer productivity, automation platforms, and practical AI workflows. The important point is not the label itself. The important point is the workflow it enables. A useful AI tool or model should reduce the distance between a user's intent and a correct, reviewed result. It should also make the work easier to observe, improve, and govern over time.
+This matters for three reasons. First, it grounds the model's responses in current, real-world data rather than stale training knowledge. Second, it lets the model take actions with real consequences — querying databases, modifying files, triggering workflows. Third, it enables multi-step reasoning where each tool result informs the next decision.
 
-For a developer team, that usually means three things. First, the system has to understand enough context to be useful. That context might be source code, product documentation, logs, tickets, metrics, documents, examples, or previous decisions. Second, the system needs a reliable way to act. That action might be generating code, calling an API, searching a knowledge base, opening a pull request, drafting a release plan, or summarizing a customer conversation. Third, the system needs a feedback loop so the team can measure quality and fix regressions.
+## The Tool Use Loop
 
-A common mistake is to treat this as a single product decision. In practice, it is an operating model. The best teams define where AI is allowed to help, where humans must review, how outputs are tested, and what happens when the system is uncertain. That operating model matters more than the name on the invoice.
+Here is the request-response cycle that powers every AI agent with tool use:
 
-When you compare options, ask whether the tool fits the jobs people already do. A strong system should work with tool schemas, task queues, planners, memory stores, retrieval, sandboxed execution, approvals, traces, and evaluation harnesses; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations. It should improve a real process without forcing every team to rebuild its workflow from scratch. If adoption requires too much ritual, the system will look impressive in a demo and then disappear from daily use.
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant A as App
+    participant M as LLM
+    participant T as Tool
 
-## Where It Creates Value
+    U->>A: "What is the AAPL stock price and summarize today's news?"
+    A->>M: Messages + tool definitions
+    M-->>A: tool_call: web_search("AAPL stock price")
+    A->>T: Execute web_search
+    T-->>A: "$189.42 (+1.2%)"
+    A->>M: tool_result + original messages
+    M-->>A: tool_call: web_search("AAPL news today")
+    A->>T: Execute web_search
+    T-->>A: [news articles]
+    A->>M: tool_result + all messages
+    M-->>A: Final answer with price + summary
+    A->>U: Rendered response
+```
 
-The best use cases are repetitive enough to benefit from automation but nuanced enough to justify AI. Purely mechanical work can often be handled with scripts. Highly ambiguous strategy work still needs experienced people. The attractive middle ground is work where context, judgment, and speed all matter.
+The loop runs until the model produces a regular text response with no pending tool calls. A well-designed agent always has a maximum iteration count to prevent runaway loops.
 
-One common use case is research and synthesis. Teams can use AI to gather scattered information, compare options, and turn notes into a structured recommendation. This is useful for architecture reviews, vendor selection, incident summaries, release notes, and customer support analysis. The output should not be accepted blindly, but it can shorten the first draft from hours to minutes.
+## Types of Tools
 
-A second use case is assisted execution. In software teams, that may mean code generation, test generation, migration planning, configuration review, or pull request analysis. In operations teams, it may mean triage, runbook lookup, log summarization, or routing incidents to the right owner. The important boundary is that AI should work inside a controlled path, not improvise across production systems without oversight.
+### Web Search
 
-A third use case is quality improvement. AI can help create test cases, summarize failures, classify feedback, detect inconsistencies, and highlight missing documentation. This is where the approach often produces compounding value. Each cycle improves the team's knowledge base, examples, evaluation cases, and standard operating procedures.
+Web search is the most common tool because it solves the model's most obvious weakness: stale knowledge. A model trained through early 2025 cannot know today's stock price, yesterday's outage postmortem, or the breaking API change your dependency just shipped.
 
-The strongest teams start with one or two narrow workflows. They measure completion rate, tool error rate, human intervention rate, step count, cost per task, and recovery success; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership before and after adoption. Then they expand only when the data shows that the system helps. This keeps the project grounded and prevents the team from chasing novelty.
+Good web search tools return structured results — title, URL, snippet — rather than raw HTML. The model needs enough context to cite the source and enough brevity to fit within its context window. I typically return three to five results and let the model decide which to cite.
 
-## A Practical Architecture
+### Code Execution
 
-A production-ready approach to this usually has five layers: interface, context, reasoning, action, and evaluation. The interface is where users express intent. It might be a chat box, command line, editor extension, dashboard, API endpoint, or background job. The interface should make the expected result obvious and should expose enough controls for the user to review or redirect the work.
+Code execution turns the model into a working calculator, data analyst, and test runner. The model writes code; a sandbox runs it; the stdout/stderr comes back. This is how tools like Claude's analysis feature and ChatGPT's Code Interpreter work under the hood.
 
-The context layer gathers the information the system needs. This layer can include retrieval from documents, code search, database records, logs, metrics, tickets, configuration files, or user-provided examples. Good context is selective. Sending everything to a model increases cost and noise. A better pattern is to retrieve the smallest set of evidence that can support the next decision.
+The critical constraint: run code in an isolated sandbox. Never execute model-generated code directly in your production environment without sandboxing. Use containers, VMs, or a service like E2B or Modal. Treat the model's code output the same way you would treat code submitted by an anonymous user on the internet.
 
-The reasoning layer chooses a plan or produces an answer. This may be a single model call, a chain of calls, a workflow graph, or an agent loop. Keep this layer simple until complexity is justified. Many teams build elaborate multi-agent systems before they can reliably evaluate one model call. That usually makes debugging harder.
+### API Calls
 
-The action layer connects the system to tools. These tools can include tool schemas, task queues, planners, memory stores, retrieval, sandboxed execution, approvals, traces, and evaluation harnesses; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations. Tool use should be explicit, typed, logged, and permissioned. When an action can affect data, infrastructure, cost, or customers, require approval or run it in a sandbox first.
+Giving the model access to your internal APIs is where tool use becomes genuinely transformative. The model can query your database for customer records, open a Jira ticket, send a Slack message, or trigger a CI build — all from a single natural language instruction.
 
-The evaluation layer closes the loop. It should track completion rate, tool error rate, human intervention rate, step count, cost per task, and recovery success; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership and preserve examples of both success and failure. Without this layer, teams are forced to judge quality by anecdotes. With it, they can improve prompts, retrieval, model choice, and workflow design with evidence.
+The shape of a good API tool definition: a clear name, a description that tells the model *when* to use it (not just *what* it does), and a JSON schema for the parameters. The description is load-bearing. Vague descriptions cause the model to misuse tools or skip them entirely.
 
-## How to Evaluate Quality
+### File Operations
 
-Evaluation is where serious AI work separates itself from experimentation. A useful evaluation plan for this starts with real tasks. Gather examples from support tickets, pull requests, internal documents, analytics requests, incident reports, or customer conversations. Remove sensitive information, then turn those examples into a small but representative test set.
+File tools let agents read source code, write reports, process uploaded documents, and maintain state between sessions. A typical set: `read_file`, `write_file`, `list_directory`, `search_files`. Apply the principle of least privilege — the agent should only see and modify the directories it needs.
 
-Each test case should define the input, the expected behavior, and the failure modes that matter. For some tasks, the expected result is exact. For example, a JSON extraction task can be checked against a schema. For other tasks, the expected result is judged by a rubric. A good rubric might score correctness, completeness, clarity, citation quality, security awareness, and usefulness.
+### Database Queries
 
-Do not rely on a single aggregate score. Track dimensions separately. A system can be fast and cheap while still being wrong. It can be accurate but too slow for interactive use. It can produce polished language while ignoring important constraints. The right choice depends on which dimension is binding for the workflow.
+Structured query tools bridge the model and your data layer. Rather than giving the model raw SQL execution (risky), expose typed query functions: `get_user_by_id(id: string)`, `search_orders(status: string, date_range: object)`. This keeps the agent productive while bounding what it can touch.
 
-For this topic, useful metrics include completion rate, tool error rate, human intervention rate, step count, cost per task, and recovery success; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership. Add qualitative review for edge cases. Keep examples where the system failed, because those examples become the most valuable part of the evaluation set. When you change prompts, retrieval rules, model versions, or tool permissions, rerun the same cases.
+## Implementing Tool Use with Claude
 
-Evaluation also protects teams from demo bias. A demo tends to show happy paths. A test set shows what happens when inputs are messy, incomplete, adversarial, or simply boring. Real users send all four.
+Anthropic's tool use API is straightforward. You define tools in the `tools` array, and the model returns `tool_use` content blocks when it wants to call one.
 
-## Implementation Plan
+```python
+import anthropic
+import json
 
-Start by writing a one-page problem statement. Describe the users, the job they are trying to complete, the current pain, and the measurable result you want. This keeps the project anchored in a business or engineering outcome instead of a vague AI initiative.
+client = anthropic.Anthropic()
 
-Next, map the workflow from request to final review. Identify where context enters the system, where the model is used, where a tool is called, and where a human approves the result. Mark any step that touches customer data, production infrastructure, financial spend, or security-sensitive information. Those steps need stronger controls.
+# Define your tools
+tools = [
+    {
+        "name": "web_search",
+        "description": "Search the web for current information. Use this when you need up-to-date facts, news, or data not in your training knowledge.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The search query"
+                }
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "run_python",
+        "description": "Execute a Python code snippet in a sandbox and return stdout. Use for calculations, data processing, and analysis.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "description": "Valid Python code to execute"
+                }
+            },
+            "required": ["code"]
+        }
+    }
+]
 
-Then build the smallest working version. Use existing tools where possible. Connect only the context sources that matter. Add simple logging. Save inputs and outputs for review. Avoid building a generalized platform before you know which workflow will survive contact with users.
+def web_search(query: str) -> str:
+    # Replace with your actual search implementation
+    return f"[Search results for '{query}': placeholder — wire up SerpAPI, Tavily, or Brave Search]"
 
-After the first version works, run it against a test set. Review failures in batches. Some failures will be prompt problems. Some will be retrieval problems. Some will be product problems, where the interface lets users ask for work the system cannot safely perform. Fix the highest-impact category first.
+def run_python(code: str) -> str:
+    # Replace with a sandboxed executor (e2b, modal, etc.)
+    # NEVER exec() in production without sandboxing
+    return f"[Sandbox output for code: {code[:60]}...]"
 
-For general adoption, focus on one team and one workflow first. A narrow workflow with visible value is easier to improve than a broad platform that nobody understands.
+def run_tool(name: str, inputs: dict) -> str:
+    if name == "web_search":
+        return web_search(inputs["query"])
+    elif name == "run_python":
+        return run_python(inputs["code"])
+    return f"Unknown tool: {name}"
 
-Finally, write an operating guide. Include setup steps, permissions, expected inputs, known limitations, escalation rules, and evaluation commands. A tool that only one person knows how to operate is not production-ready, even if it works well in a notebook.
+def run_agent(user_message: str, max_iterations: int = 10) -> str:
+    messages = [{"role": "user", "content": user_message}]
 
-## Common Mistakes to Avoid
+    for iteration in range(max_iterations):
+        response = client.messages.create(
+            model="claude-opus-4-5",
+            max_tokens=4096,
+            tools=tools,
+            messages=messages
+        )
 
-The first mistake is adopting this approach without a clear owner. AI work crosses product, engineering, legal, security, and operations. If nobody owns the workflow, decisions become fragmented. Assign an owner who can prioritize the use case, gather feedback, and decide when the system is good enough to expand.
+        # Append the assistant's response to message history
+        messages.append({"role": "assistant", "content": response.content})
 
-The second mistake is trusting polished output. Large language models are good at sounding confident. That does not mean the answer is grounded. Require citations, retrieved evidence, tests, schemas, or human review when the task has real consequences. The review process should be designed before the system is widely used.
+        # Check if the model wants to use tools
+        tool_uses = [b for b in response.content if b.type == "tool_use"]
 
-The third mistake is hiding uncertainty. If the system is missing context, blocked by permissions, or making an assumption, the user should see that. A clear refusal or a request for more information is better than a fabricated answer. This is especially important in AI agents, tool use, memory, orchestration, planning, and autonomous workflows; AI tools, developer productivity, automation platforms, and practical AI workflows because small errors can cascade through technical decisions.
+        if not tool_uses:
+            # No tool calls — extract and return the text response
+            text_blocks = [b for b in response.content if b.type == "text"]
+            return text_blocks[0].text if text_blocks else ""
 
-The fourth mistake is ignoring cost and latency until late. Token usage, tool calls, retries, and long context windows can become expensive. Measure cost per successful task, not only cost per model call. A cheaper model that requires repeated human cleanup may be more expensive than a stronger model with fewer failures.
+        # Execute all requested tools and collect results
+        tool_results = []
+        for tool_use in tool_uses:
+            result = run_tool(tool_use.name, tool_use.input)
+            tool_results.append({
+                "type": "tool_result",
+                "tool_use_id": tool_use.id,
+                "content": result
+            })
 
-The fifth mistake is skipping change management. Users need to know what the system is for, when to trust it, and how to report problems. Good rollout includes examples, office hours, documentation, and a feedback loop. Adoption is a product problem, not only an engineering problem.
+        # Send results back to the model
+        messages.append({"role": "user", "content": tool_results})
 
-## Recommended Stack and Workflow
+    return "Max iterations reached."
 
-A strong stack for this does not have to be complicated. Begin with a stable interface, a small set of trusted context sources, a reliable model or tool provider, and a visible review step. Add orchestration only when the workflow genuinely needs multiple steps or tool calls.
+# Usage
+answer = run_agent("What is 17 factorial? Show your work with Python.")
+print(answer)
+```
 
-For context, prefer sources that are maintained as part of normal work: repositories, docs, tickets, runbooks, dashboards, and customer records with appropriate access controls. Stale context creates stale answers. If the knowledge base is not maintained, retrieval will not save the system.
+A few things worth noting in this implementation. The `messages` list grows with each round trip — that is intentional. The model needs the full conversation history to reason correctly. The `max_iterations` guard is essential; without it a buggy tool or ambiguous task can spin indefinitely. And the tool results are sent back as `user` role content, which is what the API expects.
 
-For model selection, test more than one option. Compare quality, latency, cost, context length, structured output support, tool calling behavior, privacy terms, and operational fit. The best model for drafting a document may not be the best model for code repair, classification, or high-volume summarization.
+## Implementing Tool Use with OpenAI
 
-For workflow control, use typed inputs and outputs. JSON schemas, templates, checklists, and approval forms make results easier to validate. They also help users understand what the system can do. Free-form chat is useful for exploration, but production workflows benefit from structure.
+OpenAI's function calling API follows the same pattern with different field names. Tools are defined in the `tools` array with `type: "function"`, and tool calls come back in `message.tool_calls`.
 
-For monitoring, capture prompt versions, retrieval hits, model names, tool calls, latency, token usage, user edits, and final outcomes. These records make it possible to debug quality issues and defend decisions later. Monitoring also helps teams decide when a prompt needs a small change and when the workflow needs a redesign.
+```python
+from openai import OpenAI
+import json
 
-## Decision Checklist
+client = OpenAI()
 
-Use a decision checklist before you invest deeply. The checklist should force the team to connect the technology to a measurable workflow. For this topic, the most useful criteria are usually workflow fit, output quality, integration effort, operating cost, security posture, and long-term maintainability.
+tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Search the web for current information. Use when you need facts not in your training data.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query"
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_python",
+            "description": "Execute Python in a sandbox. Use for calculations and data processing.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "code": {"type": "string", "description": "Python code to run"}
+                },
+                "required": ["code"]
+            }
+        }
+    }
+]
 
-Ask these questions before adoption:
+def run_tool(name: str, arguments: str) -> str:
+    args = json.loads(arguments)
+    if name == "web_search":
+        return web_search(args["query"])
+    elif name == "run_python":
+        return run_python(args["code"])
+    return f"Unknown tool: {name}"
 
-- What user job will this improve?
-- What evidence shows that the current workflow is slow, expensive, or error-prone?
-- What context does the system need, and who owns that context?
-- What actions can the system take, and which actions require approval?
-- What data must never be sent to a third-party service?
-- How will we measure completion rate, tool error rate, human intervention rate, step count, cost per task, and recovery success; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership?
-- What happens when the model is uncertain or wrong?
-- Who reviews failures and improves the workflow?
-- What is the rollback plan if quality drops?
+def run_agent_openai(user_message: str, max_iterations: int = 10) -> str:
+    messages = [{"role": "user", "content": user_message}]
 
-The answers do not need to be perfect at the start. They do need to be explicit. Explicit assumptions can be tested. Hidden assumptions become production incidents, budget surprises, or tools that nobody uses.
+    for iteration in range(max_iterations):
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            tools=tools,
+            messages=messages
+        )
 
-A good decision also includes a stop rule. Decide what result would make the team pause or abandon the rollout. This protects the organization from continuing an AI project simply because it is already in motion.
+        message = response.choices[0].message
+        messages.append(message)  # append the assistant message object
+
+        if not message.tool_calls:
+            return message.content or ""
+
+        # Execute each tool call
+        for tool_call in message.tool_calls:
+            result = run_tool(tool_call.function.name, tool_call.function.arguments)
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": result
+            })
+
+    return "Max iterations reached."
+```
+
+The structure is nearly identical. The meaningful differences are in field naming (`input_schema` vs `parameters`), how tool results are structured (`tool_result` content blocks vs `role: "tool"` messages), and the response shape. If you abstract the tool execution logic into a shared `run_tool` function, switching between providers becomes a thin adapter layer.
+
+## Claude vs OpenAI Tool Use: Key Differences
+
+```mermaid
+graph TB
+    subgraph Claude["Claude (Anthropic)"]
+        CA[Tool definition: input_schema]
+        CB[Tool call: tool_use content block]
+        CC[Tool result: user message with tool_result blocks]
+        CD[Parallel tool calls: yes]
+        CE[tool_choice: auto / any / specific tool]
+    end
+
+    subgraph OAI["OpenAI"]
+        OA[Tool definition: function.parameters]
+        OB[Tool call: message.tool_calls array]
+        OC[Tool result: role=tool messages]
+        OD[Parallel tool calls: yes]
+        OE[tool_choice: auto / required / specific function]
+    end
+
+    Claude -->|"Conceptually identical"| OAI
+    CA -.->|JSON Schema| OA
+    CB -.->|Same data, different shape| OB
+    CC -.->|Different message role| OC
+```
+
+Both providers support parallel tool calls — the model can request multiple tools in a single response, and you send all results back before the next generation step. This meaningfully reduces latency for tasks that need independent lookups.
+
+## Security Considerations
+
+Tool use dramatically expands the attack surface of your application. These are the constraints I apply to every production agent.
+
+**Scope tools to the minimum necessary permissions.** An agent that summarizes customer emails does not need write access to your database. Design tool interfaces that cannot exceed their intended purpose regardless of what the model asks.
+
+**Treat model-generated inputs as untrusted.** Apply the same validation you would apply to user input from the internet. A prompt injection attack can cause the model to call tools with attacker-controlled arguments. Validate all tool inputs against schemas before execution.
+
+**Log every tool call.** Store the tool name, inputs, outputs, and timestamp for every call. This is your audit trail. When something goes wrong — and it will — you need to reconstruct exactly what the agent did and in what order.
+
+**Require human approval for irreversible actions.** Sending emails, deleting records, making purchases, and deploying code are all candidates for an approval gate. Present the proposed action to a human before executing. This is not optional for high-stakes workflows.
+
+**Rate-limit and cost-cap tool calls.** A loop bug or a malicious prompt can cause hundreds of expensive tool calls in seconds. Set per-session and per-day limits on API calls, code executions, and token consumption.
+
+**Never execute model-generated code without sandboxing.** This point is important enough to repeat. Use an isolated environment with no access to your network, filesystem, or secrets.
+
+## Tool Design Best Practices
+
+The model's ability to use tools effectively depends almost entirely on how well you define them. These are the patterns I have found most reliable.
+
+**Write descriptions that say *when* to use the tool, not just what it does.** Bad: "Searches the web." Good: "Searches the web for current information. Use this when the user asks about recent events, current prices, or anything that may have changed after your training cutoff."
+
+**Return structured data, not prose.** JSON objects are easier for the model to reason over than narrative summaries. Include the fields the model will need for its next decision, and nothing more.
+
+**Fail loudly with informative errors.** When a tool fails, return an error object that explains why and what the model can do next. `{"error": "rate_limited", "retry_after_seconds": 30}` gives the model actionable information. An empty string does not.
+
+**Keep tool count low.** The model has to reason over every tool definition in its context. Ten well-designed tools outperform thirty overlapping ones. If you have many tools, use a dynamic retrieval system to inject only the relevant subset into each request.
+
+**Test tools in isolation before wiring them into an agent.** Define expected inputs and expected outputs. Verify the tool handles edge cases — empty results, timeouts, malformed data — before the model ever sees it.
+
+## When to Use Which Tool
+
+```mermaid
+flowchart TD
+    Q[What does the agent need to do?] --> A{Needs current data?}
+    A -->|Yes| B[web_search]
+    A -->|No| C{Needs to compute or transform data?}
+    C -->|Yes| D[run_python / code_execution]
+    C -->|No| E{Needs to read/write persistent state?}
+    E -->|Files| F[file_read / file_write]
+    E -->|Database| G[typed query functions]
+    E -->|External service| H{Is the action reversible?}
+    H -->|Yes| I[API call — execute directly]
+    H -->|No| J[API call — require human approval first]
+    B --> K[Return results to model]
+    D --> K
+    F --> K
+    G --> K
+    I --> K
+    J -->|Approved| K
+    J -->|Rejected| L[Inform model — stop or replan]
+    K --> M{Task complete?}
+    M -->|Yes| N[Return final answer]
+    M -->|No| Q
+```
+
+## Model Context Protocol (MCP)
+
+Model Context Protocol (MCP) is an open standard from Anthropic that formalizes the connection between AI models and external tools and data sources. Where tool use is a feature of individual API calls, MCP is a protocol for building reusable, composable tool servers that any MCP-compatible client can consume.
+
+The architecture has three parts. An MCP server exposes tools, resources (files, database records, live data), and prompts through a standardized interface. An MCP client — Claude Desktop, Cursor, or your own application — connects to one or more servers and presents their capabilities to the model. The model interacts with MCP tools the same way it interacts with inline tool definitions, but the tooling is decoupled from the application.
+
+In practice, MCP means you can build a Jira tool server once and reuse it across every agent in your organization. The server handles authentication, rate limiting, and schema definition. Any client that speaks MCP can use it without knowing how Jira works internally.
+
+As of early 2026, Claude Desktop, Cursor, and a growing list of third-party clients support MCP. If you are building tools that will be shared across multiple applications or teams, MCP is worth designing toward from the start. If you are building a single internal agent, inline tool definitions are simpler and equally capable.
+
+## Multi-Tool Orchestration
+
+Most real tasks require more than one tool call, and the order matters. Multi-tool orchestration is the practice of designing agents that plan, execute, and adapt across a sequence of tool calls to complete a goal.
+
+The simplest pattern is sequential — the model calls one tool, uses the result to decide on the next tool, and so on until the task is done. The tool use loop I showed earlier handles this naturally.
+
+More complex patterns involve parallel execution, branching, and sub-agents. An agent researching a topic might fire off three web searches simultaneously, merge the results, then decide whether to dig deeper or synthesize. You can implement parallelism by processing all tool calls from a single model response concurrently and returning all results at once.
+
+For very long workflows — ten or more steps — consider checkpointing. Save the message history and tool results to persistent storage at key points. If the agent fails or the context window fills, you can resume from the checkpoint rather than starting over.
+
+The hardest part of orchestration is not the code. It is defining clear stopping criteria. An agent that does not know when it is done will either loop until it hits your iteration limit or produce premature answers before it has enough information. The model's instructions should say explicitly: "When you have gathered X and confirmed Y, write the final report. Do not call any more tools after that."
+
+## Verdict
+
+LLM tool use is not an experimental feature. It is the foundation of every production AI agent I have seen deliver real business value. The primitives are stable, the APIs are mature across both Claude and OpenAI, and the patterns are well-understood.
+
+The gap between demos and production is not about the model — it is about tool design, security controls, and evaluation rigor. Define your tools carefully. Sandbox anything that executes. Log everything. Cap your iterations. Put humans in the loop for irreversible actions.
+
+Start with two or three tools that directly serve your core workflow. Measure tool error rate and task completion rate before adding more. The agents that work are the ones built incrementally on a foundation of well-understood, well-tested tools — not the ones that launched with thirty integrations and no evaluation suite.
 
 ## FAQ
 
-### Is this only for advanced AI teams?
+### What is the difference between tool use and function calling?
 
-No. The concepts are useful for small teams as well, but the implementation should match the team's maturity. A small team can start with a narrow workflow, manual review, and simple logs. A larger organization may need policy controls, shared evaluation infrastructure, and formal approval paths.
+They are the same concept with different names. "Function calling" is OpenAI's original terminology. Anthropic calls it "tool use." Both refer to the mechanism by which a language model requests structured external actions during inference. The underlying architecture — define schema, model emits structured call, app executes, result returned — is identical.
 
-### What is the biggest risk?
+### Can the model choose not to use a tool?
 
-The biggest risk is not that the model makes one obvious mistake. The bigger risk is that a workflow quietly produces plausible but wrong output at scale. This is why evaluation, review, and monitoring matter. Treat AI output as work that needs quality control, not as magic.
+Yes. By default, both Claude and OpenAI use `tool_choice: auto`, which lets the model decide whether to call a tool or respond directly. If the model determines it can answer from its training knowledge without a tool call, it will. You can override this with `tool_choice: required` (OpenAI) or `tool_choice: {type: "any"}` (Claude) to force at least one tool call.
 
-### How long does adoption take?
+### How do I prevent prompt injection attacks through tool results?
 
-A useful prototype can often be built quickly, but production adoption takes longer because teams need permissions, evaluation, documentation, and user feedback. Plan for iteration. The first version should teach you which assumptions were wrong.
+The most effective defense is treating all tool outputs as untrusted data. Do not interpolate tool results directly into system prompts. Return results as user-role messages, which the model treats as external data rather than instructions. Additionally, validate tool inputs before execution — if a web search query contains suspicious instruction-like text, log it and consider rejecting it.
 
-### Should we build or buy?
+### What happens when a tool call fails mid-task?
 
-Buy when the workflow is common, the vendor integrates with your stack, and the risk profile is acceptable. Build when the workflow depends on proprietary context, custom tools, or differentiated product behavior. Many teams use a hybrid approach: buy model access or infrastructure, then build the workflow layer themselves.
+Return a structured error object as the tool result rather than throwing an exception in your app. Include the error type and any actionable guidance: `{"error": "not_found", "message": "No results for this query. Try broader search terms."}`. The model can then decide whether to retry with different inputs, use a different tool, or inform the user that it cannot complete the task. An agent that handles tool failures gracefully is far more useful than one that crashes on the first error.
 
-### How should success be measured?
+### Should I use MCP or inline tool definitions?
 
-Measure outcomes rather than excitement. Good measures include completion rate, tool error rate, human intervention rate, step count, cost per task, and recovery success; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership. Add human review quality and user adoption data. If people try the system once and return to the old process, the rollout has not succeeded.
-
-## Final Takeaway
-
-This approach is valuable when it is connected to a real workflow, evaluated against real examples, and operated with clear boundaries. The winning teams will not be the ones with the longest list of AI tools. They will be the teams that turn AI into repeatable, observable, and trusted work.
-
-Start small, measure honestly, and improve the system with evidence. Use tool schemas, task queues, planners, memory stores, retrieval, sandboxed execution, approvals, traces, and evaluation harnesses; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations where they fit, but keep the focus on agent workflows that are useful, bounded, observable, and recoverable; clearer tool selection and workflows that save time without creating hidden risk. That is the difference between an impressive demo and a capability that keeps paying off after the novelty fades.
+Use inline tool definitions when you are building a single application with a fixed set of tools — it is simpler and requires no additional infrastructure. Use MCP when you need to share tools across multiple applications, clients, or teams, or when you want to decouple tool server maintenance from your application release cycle. The capability is equivalent; the operational trade-off is reuse versus simplicity.

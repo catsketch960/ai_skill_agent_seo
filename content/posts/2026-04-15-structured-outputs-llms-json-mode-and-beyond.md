@@ -2,145 +2,456 @@
 title: "Structured Outputs from LLMs: JSON Mode and Beyond"
 date: "2026-04-15"
 slug: "structured-outputs-llms-json-mode-and-beyond"
-description: "A practical, developer-friendly guide to structured outputs from llms: json mode and beyond with architecture, evaluation, rollout advice, and FAQ."
+description: "JSON mode, schema enforcement, tool use, Pydantic validation — a developer's hands-on guide to reliable structured output from any LLM."
 heroImage: "/images/heroes/structured-outputs-llms-json-mode-and-beyond.webp"
 tags: [llm, ai-tools]
 ---
 
-This topic is a practical topic for teams that want AI to create durable value instead of short demos.
+Getting an LLM to write a haiku is easy. Getting it to reliably return a JSON object with exactly the right keys, the right types, and no trailing commentary — that is the part that quietly breaks production systems. I have spent the last year wiring structured output into pipelines for data extraction, agentic workflows, and API backends, and the gap between "it works in the playground" and "it works at 2 AM in production" is entirely about how carefully you enforce structure.
 
-This guide is written for developers, technical product managers, AI engineers, and teams choosing models for real applications; operators, developers, founders, analysts, and teams comparing AI products for daily work. It focuses on large language models, model evaluation, inference, prompting, retrieval, and production AI systems; AI tools, developer productivity, automation platforms, and practical AI workflows and explains how to evaluate the topic in a way that leads to more reliable AI products with measurable quality, cost, and latency controls; clearer tool selection and workflows that save time without creating hidden risk. The emphasis is practical: what the concept means, how it fits into a real stack, what trade-offs matter, and how to avoid common implementation mistakes.
+This guide covers every practical approach: JSON mode, JSON Schema enforcement, tool use as a schema hack, Pydantic integration, validation strategies, and the error handling that actually saves you. No generic AI filler — just the code and the trade-offs.
 
-The AI market changes quickly, so this article avoids brittle claims about exact pricing or one-time benchmark rankings. Use it as a durable decision framework, then confirm vendor limits, model names, and pricing on the official product pages before you buy or deploy.
+## Why Structured Output Matters
 
-## What It Really Means
+Free-form LLM output is fine for chat. It is a liability for everything else. When you need to parse a model's response, store it in a database, pass it to another function, or render it in a UI, you need a contract. Without one, you spend half your engineering time writing defensive parsing code — and still get surprised by the model deciding to preface its JSON with "Sure! Here is the JSON you requested:".
 
-At a high level, This topic sits inside large language models, model evaluation, inference, prompting, retrieval, and production AI systems; AI tools, developer productivity, automation platforms, and practical AI workflows. The important point is not the label itself. The important point is the workflow it enables. A useful AI tool or model should reduce the distance between a user's intent and a correct, reviewed result. It should also make the work easier to observe, improve, and govern over time.
+The cost of unstructured output compounds fast:
 
-For a developer team, that usually means three things. First, the system has to understand enough context to be useful. That context might be source code, product documentation, logs, tickets, metrics, documents, examples, or previous decisions. Second, the system needs a reliable way to act. That action might be generating code, calling an API, searching a knowledge base, opening a pull request, drafting a release plan, or summarizing a customer conversation. Third, the system needs a feedback loop so the team can measure quality and fix regressions.
+- **Parsing failures** break pipelines silently or loudly depending on how fragile your code is.
+- **Schema drift** means a model that worked fine last month suddenly adds a new key or changes a field name, and your downstream breaks.
+- **Retry loops** eat latency and money when you have to reprompt because the model formatted things wrong.
+- **Debugging is brutal** because the bug is not in your code — it is in a language model's probabilistic output.
 
-A common mistake is to treat this as a single product decision. In practice, it is an operating model. The best teams define where AI is allowed to help, where humans must review, how outputs are tested, and what happens when the system is uncertain. That operating model matters more than the name on the invoice.
+Structured output approaches exist to close that gap. The goal is to make the model's output as predictable as a typed function return.
 
-When you compare options, ask whether the tool fits the jobs people already do. A strong system should work with model APIs, open-weight models, prompt templates, embeddings, vector databases, evaluation suites, logs, and guardrails; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations. It should improve a real process without forcing every team to rebuild its workflow from scratch. If adoption requires too much ritual, the system will look impressive in a demo and then disappear from daily use.
+```mermaid
+graph TD
+    A[LLM Prompt] --> B{Approach?}
+    B -->|Prompt only| C[Free-form text]
+    B -->|JSON Mode| D[Valid JSON, any shape]
+    B -->|JSON Schema| E[Valid JSON, enforced shape]
+    B -->|Tool Use| F[Structured args, model-native]
+    C --> G[Manual parsing — fragile]
+    D --> H[Still need key validation]
+    E --> I[Type-safe, schema-validated]
+    F --> I
+    I --> J[Reliable downstream consumption]
+```
 
-## Where It Creates Value
+## JSON Mode: The Fastest On-Ramp
 
-The best use cases are repetitive enough to benefit from automation but nuanced enough to justify AI. Purely mechanical work can often be handled with scripts. Highly ambiguous strategy work still needs experienced people. The attractive middle ground is work where context, judgment, and speed all matter.
+JSON mode is the simplest form of structure enforcement. You tell the model "output valid JSON" and it constrains its token sampling to ensure the output parses. No hallucinated trailing text, no markdown fences (usually), no half-finished objects.
 
-One common use case is research and synthesis. Teams can use AI to gather scattered information, compare options, and turn notes into a structured recommendation. This is useful for architecture reviews, vendor selection, incident summaries, release notes, and customer support analysis. The output should not be accepted blindly, but it can shorten the first draft from hours to minutes.
+### OpenAI JSON Mode
 
-A second use case is assisted execution. In software teams, that may mean code generation, test generation, migration planning, configuration review, or pull request analysis. In operations teams, it may mean triage, runbook lookup, log summarization, or routing incidents to the right owner. The important boundary is that AI should work inside a controlled path, not improvise across production systems without oversight.
+OpenAI introduced `response_format: { type: "json_object" }` in the Chat Completions API. Here is a minimal working example:
 
-A third use case is quality improvement. AI can help create test cases, summarize failures, classify feedback, detect inconsistencies, and highlight missing documentation. This is where the approach often produces compounding value. Each cycle improves the team's knowledge base, examples, evaluation cases, and standard operating procedures.
+```python
+from openai import OpenAI
 
-The strongest teams start with one or two narrow workflows. They measure task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership before and after adoption. Then they expand only when the data shows that the system helps. This keeps the project grounded and prevents the team from chasing novelty.
+client = OpenAI()
 
-## A Practical Architecture
+response = client.chat.completions.create(
+    model="gpt-4o",
+    response_format={"type": "json_object"},
+    messages=[
+        {
+            "role": "system",
+            "content": "You extract structured data. Always respond with valid JSON."
+        },
+        {
+            "role": "user",
+            "content": "Extract: Name, email, and company from this: 'Hi, I'm Sarah Chen at Acme Corp. Reach me at sarah@acme.io'"
+        }
+    ]
+)
 
-A production-ready approach to this usually has five layers: interface, context, reasoning, action, and evaluation. The interface is where users express intent. It might be a chat box, command line, editor extension, dashboard, API endpoint, or background job. The interface should make the expected result obvious and should expose enough controls for the user to review or redirect the work.
+import json
+data = json.loads(response.choices[0].message.content)
+print(data)
+# {"name": "Sarah Chen", "email": "sarah@acme.io", "company": "Acme Corp"}
+```
 
-The context layer gathers the information the system needs. This layer can include retrieval from documents, code search, database records, logs, metrics, tickets, configuration files, or user-provided examples. Good context is selective. Sending everything to a model increases cost and noise. A better pattern is to retrieve the smallest set of evidence that can support the next decision.
+**Critical caveat:** JSON mode guarantees syntactically valid JSON. It does not guarantee that the JSON contains the keys you expect, uses the right types, or matches any particular shape. You still need validation on the output.
 
-The reasoning layer chooses a plan or produces an answer. This may be a single model call, a chain of calls, a workflow graph, or an agent loop. Keep this layer simple until complexity is justified. Many teams build elaborate multi-agent systems before they can reliably evaluate one model call. That usually makes debugging harder.
+### Claude Prefilling Trick
 
-The action layer connects the system to tools. These tools can include model APIs, open-weight models, prompt templates, embeddings, vector databases, evaluation suites, logs, and guardrails; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations. Tool use should be explicit, typed, logged, and permissioned. When an action can affect data, infrastructure, cost, or customers, require approval or run it in a sandbox first.
+Anthropic's Claude API supports a `prefill` pattern where you inject the start of the assistant's response. By prefilling with `{`, you force the model to continue from an open brace — which strongly nudges it toward valid JSON output. This works even without an explicit JSON mode flag.
 
-The evaluation layer closes the loop. It should track task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership and preserve examples of both success and failure. Without this layer, teams are forced to judge quality by anecdotes. With it, they can improve prompts, retrieval, model choice, and workflow design with evidence.
+```python
+import anthropic
+import json
 
-## How to Evaluate Quality
+client = anthropic.Anthropic()
 
-Evaluation is where serious AI work separates itself from experimentation. A useful evaluation plan for this starts with real tasks. Gather examples from support tickets, pull requests, internal documents, analytics requests, incident reports, or customer conversations. Remove sensitive information, then turn those examples into a small but representative test set.
+response = client.messages.create(
+    model="claude-opus-4-5",
+    max_tokens=1024,
+    system="You extract structured contact data. Return only JSON, no explanation.",
+    messages=[
+        {
+            "role": "user",
+            "content": "Extract contact info: 'Ping me — James, james.t@startup.ai, works at NeuralStack'"
+        },
+        {
+            "role": "assistant",
+            "content": "{"  # prefill forces JSON continuation
+        }
+    ]
+)
 
-Each test case should define the input, the expected behavior, and the failure modes that matter. For some tasks, the expected result is exact. For example, a JSON extraction task can be checked against a schema. For other tasks, the expected result is judged by a rubric. A good rubric might score correctness, completeness, clarity, citation quality, security awareness, and usefulness.
+# The response continues from the "{" we prefilled
+raw = "{" + response.content[0].text
+data = json.loads(raw)
+print(data)
+# {"name": "James", "email": "james.t@startup.ai", "company": "NeuralStack"}
+```
 
-Do not rely on a single aggregate score. Track dimensions separately. A system can be fast and cheap while still being wrong. It can be accurate but too slow for interactive use. It can produce polished language while ignoring important constraints. The right choice depends on which dimension is binding for the workflow.
+The prefill trick is surprisingly robust and works across Claude model versions. The trade-off is that it is a hack — you are exploiting the model's autoregressive nature rather than using a native API feature.
 
-For this topic, useful metrics include task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership. Add qualitative review for edge cases. Keep examples where the system failed, because those examples become the most valuable part of the evaluation set. When you change prompts, retrieval rules, model versions, or tool permissions, rerun the same cases.
+## JSON Schema Enforcement
 
-Evaluation also protects teams from demo bias. A demo tends to show happy paths. A test set shows what happens when inputs are messy, incomplete, adversarial, or simply boring. Real users send all four.
+JSON mode gets you syntactically valid JSON. JSON Schema enforcement gets you *semantically valid* JSON — the right keys, the right types, optional vs. required fields, nested objects with their own constraints.
 
-## Implementation Plan
+OpenAI's Structured Outputs feature (distinct from JSON mode) lets you pass a full JSON Schema and the API will guarantee the output conforms to it, using constrained decoding:
 
-Start by writing a one-page problem statement. Describe the users, the job they are trying to complete, the current pain, and the measurable result you want. This keeps the project anchored in a business or engineering outcome instead of a vague AI initiative.
+```python
+from openai import OpenAI
+from pydantic import BaseModel
 
-Next, map the workflow from request to final review. Identify where context enters the system, where the model is used, where a tool is called, and where a human approves the result. Mark any step that touches customer data, production infrastructure, financial spend, or security-sensitive information. Those steps need stronger controls.
+client = OpenAI()
 
-Then build the smallest working version. Use existing tools where possible. Connect only the context sources that matter. Add simple logging. Save inputs and outputs for review. Avoid building a generalized platform before you know which workflow will survive contact with users.
+class ContactInfo(BaseModel):
+    name: str
+    email: str
+    company: str
+    role: str | None = None
 
-After the first version works, run it against a test set. Review failures in batches. Some failures will be prompt problems. Some will be retrieval problems. Some will be product problems, where the interface lets users ask for work the system cannot safely perform. Fix the highest-impact category first.
+response = client.beta.chat.completions.parse(
+    model="gpt-4o-2024-08-06",
+    messages=[
+        {
+            "role": "system",
+            "content": "Extract contact information from the text."
+        },
+        {
+            "role": "user",
+            "content": "Meet Dr. Priya Nair, CTO at QuantumLeap (priya@ql.dev)"
+        }
+    ],
+    response_format=ContactInfo,
+)
 
-For general adoption, focus on one team and one workflow first. A narrow workflow with visible value is easier to improve than a broad platform that nobody understands.
+contact = response.choices[0].message.parsed
+print(contact.name)    # Dr. Priya Nair
+print(contact.email)   # priya@ql.dev
+print(contact.role)    # CTO
+```
 
-Finally, write an operating guide. Include setup steps, permissions, expected inputs, known limitations, escalation rules, and evaluation commands. A tool that only one person knows how to operate is not production-ready, even if it works well in a notebook.
+The `.parse()` method (OpenAI SDK v1.40+) accepts a Pydantic model directly and returns a typed object — no manual JSON parsing needed. The schema is derived automatically from the Pydantic model. Under the hood, OpenAI uses constrained beam search to guarantee schema conformance at the token level.
 
-## Common Mistakes to Avoid
+## Tool Use for Structured Output
 
-The first mistake is adopting this approach without a clear owner. AI work crosses product, engineering, legal, security, and operations. If nobody owns the workflow, decisions become fragmented. Assign an owner who can prioritize the use case, gather feedback, and decide when the system is good enough to expand.
+Before native schema enforcement existed, the standard trick was to define a fake "tool" whose parameters match your desired output schema, then force the model to call it. This still works and is often the best option for Claude, Gemini, and any model that has robust function calling but not native structured outputs.
 
-The second mistake is trusting polished output. Large language models are good at sounding confident. That does not mean the answer is grounded. Require citations, retrieved evidence, tests, schemas, or human review when the task has real consequences. The review process should be designed before the system is widely used.
+```python
+import anthropic
+import json
 
-The third mistake is hiding uncertainty. If the system is missing context, blocked by permissions, or making an assumption, the user should see that. A clear refusal or a request for more information is better than a fabricated answer. This is especially important in large language models, model evaluation, inference, prompting, retrieval, and production AI systems; AI tools, developer productivity, automation platforms, and practical AI workflows because small errors can cascade through technical decisions.
+client = anthropic.Anthropic()
 
-The fourth mistake is ignoring cost and latency until late. Token usage, tool calls, retries, and long context windows can become expensive. Measure cost per successful task, not only cost per model call. A cheaper model that requires repeated human cleanup may be more expensive than a stronger model with fewer failures.
+tools = [
+    {
+        "name": "save_contact",
+        "description": "Save extracted contact information",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Full name"},
+                "email": {"type": "string", "description": "Email address"},
+                "company": {"type": "string", "description": "Company name"},
+                "role": {"type": "string", "description": "Job title or role"}
+            },
+            "required": ["name", "email", "company"]
+        }
+    }
+]
 
-The fifth mistake is skipping change management. Users need to know what the system is for, when to trust it, and how to report problems. Good rollout includes examples, office hours, documentation, and a feedback loop. Adoption is a product problem, not only an engineering problem.
+response = client.messages.create(
+    model="claude-opus-4-5",
+    max_tokens=1024,
+    tools=tools,
+    tool_choice={"type": "tool", "name": "save_contact"},  # force the tool call
+    messages=[
+        {
+            "role": "user",
+            "content": "Extract: 'This is Lena Müller, VP of Eng at DataBridge. lena.m@databridge.com'"
+        }
+    ]
+)
 
-## Recommended Stack and Workflow
+# Tool use response has structured input
+tool_use_block = next(b for b in response.content if b.type == "tool_use")
+contact = tool_use_block.input
+print(contact)
+# {"name": "Lena Müller", "email": "lena.m@databridge.com", "company": "DataBridge", "role": "VP of Eng"}
+```
 
-A strong stack for this does not have to be complicated. Begin with a stable interface, a small set of trusted context sources, a reliable model or tool provider, and a visible review step. Add orchestration only when the workflow genuinely needs multiple steps or tool calls.
+`tool_choice: {"type": "tool", "name": "save_contact"}` is the important part — it forces the model to call exactly that tool rather than choosing whether to use a tool at all. The model cannot escape into free-form text.
 
-For context, prefer sources that are maintained as part of normal work: repositories, docs, tickets, runbooks, dashboards, and customer records with appropriate access controls. Stale context creates stale answers. If the knowledge base is not maintained, retrieval will not save the system.
+This pattern works on any model that supports function/tool calling. It is my default for Claude-based pipelines.
 
-For model selection, test more than one option. Compare quality, latency, cost, context length, structured output support, tool calling behavior, privacy terms, and operational fit. The best model for drafting a document may not be the best model for code repair, classification, or high-volume summarization.
+## Comparison: Which Approach to Use When
 
-For workflow control, use typed inputs and outputs. JSON schemas, templates, checklists, and approval forms make results easier to validate. They also help users understand what the system can do. Free-form chat is useful for exploration, but production workflows benefit from structure.
+```mermaid
+quadrantChart
+    title Structured Output Approaches
+    x-axis "Lower Control" --> "Higher Control"
+    y-axis "More Setup" --> "Less Setup"
+    quadrant-1 High control, less setup
+    quadrant-2 High control, more setup
+    quadrant-3 Low control, more setup
+    quadrant-4 Low control, less setup
+    JSON Mode: [0.25, 0.75]
+    Claude Prefill: [0.35, 0.6]
+    Tool Use: [0.75, 0.55]
+    OpenAI Structured Outputs: [0.85, 0.7]
+    Prompt Only: [0.1, 0.85]
+```
 
-For monitoring, capture prompt versions, retrieval hits, model names, tool calls, latency, token usage, user edits, and final outcomes. These records make it possible to debug quality issues and defend decisions later. Monitoring also helps teams decide when a prompt needs a small change and when the workflow needs a redesign.
+| Approach | Schema Enforced | Type Safety | Model Support | Best For |
+|---|---|---|---|---|
+| Prompt only | No | No | All | Prototyping |
+| JSON mode | Syntax only | No | OpenAI, some others | Simple extraction |
+| Claude prefill | Syntax nudge | No | Claude | Quick Claude hacks |
+| Tool use | Yes (JSON Schema) | Partial | OpenAI, Claude, Gemini | Cross-model pipelines |
+| OpenAI Structured Outputs | Yes (full schema) | Yes (with Pydantic) | OpenAI only | Production OpenAI apps |
 
-## Decision Checklist
+## Validation and Error Handling
 
-Use a decision checklist before you invest deeply. The checklist should force the team to connect the technology to a measurable workflow. For this topic, the most useful criteria are usually workflow fit, output quality, integration effort, operating cost, security posture, and long-term maintainability.
+Even with schema enforcement, you need a validation layer. Constrained decoding handles syntax and shape, but not semantic validity — an email field containing `"not-an-email"` will still pass JSON Schema unless you add a `format` constraint or validate after the fact.
 
-Ask these questions before adoption:
+Here is the validation pattern I use in production:
 
-- What user job will this improve?
-- What evidence shows that the current workflow is slow, expensive, or error-prone?
-- What context does the system need, and who owns that context?
-- What actions can the system take, and which actions require approval?
-- What data must never be sent to a third-party service?
-- How will we measure task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership?
-- What happens when the model is uncertain or wrong?
-- Who reviews failures and improves the workflow?
-- What is the rollback plan if quality drops?
+```python
+from pydantic import BaseModel, EmailStr, field_validator, ValidationError
+from openai import OpenAI
+import json
+import time
 
-The answers do not need to be perfect at the start. They do need to be explicit. Explicit assumptions can be tested. Hidden assumptions become production incidents, budget surprises, or tools that nobody uses.
+client = OpenAI()
 
-A good decision also includes a stop rule. Decide what result would make the team pause or abandon the rollout. This protects the organization from continuing an AI project simply because it is already in motion.
+class ContactInfo(BaseModel):
+    name: str
+    email: EmailStr  # Pydantic validates email format
+    company: str
+    role: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def name_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("name cannot be empty")
+        return v.strip()
+
+def extract_contact(text: str, max_retries: int = 3) -> ContactInfo:
+    messages = [
+        {"role": "system", "content": "Extract contact info as JSON. Fields: name, email, company, role (optional)."},
+        {"role": "user", "content": text}
+    ]
+
+    for attempt in range(max_retries):
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                response_format={"type": "json_object"},
+                messages=messages
+            )
+            raw = json.loads(response.choices[0].message.content)
+            return ContactInfo(**raw)
+
+        except json.JSONDecodeError as e:
+            if attempt == max_retries - 1:
+                raise RuntimeError(f"JSON parse failed after {max_retries} attempts: {e}")
+            messages.append({"role": "assistant", "content": response.choices[0].message.content})
+            messages.append({"role": "user", "content": f"That was not valid JSON. Error: {e}. Try again."})
+
+        except ValidationError as e:
+            if attempt == max_retries - 1:
+                raise RuntimeError(f"Validation failed after {max_retries} attempts: {e}")
+            messages.append({"role": "assistant", "content": response.choices[0].message.content})
+            messages.append({"role": "user", "content": f"Schema validation failed: {e}. Fix and retry."})
+
+        time.sleep(0.5 * (attempt + 1))  # simple backoff
+
+    raise RuntimeError("Unreachable")
+
+# Usage
+contact = extract_contact("Talk to Ben Okafor (ben.o@fintech.io), Head of Product at PayLayer")
+print(contact.model_dump())
+```
+
+The retry loop appends the failed output and the error back into the conversation so the model understands what went wrong. This self-correction pattern reduces retry count significantly compared to blind retries from scratch.
+
+## Pydantic Integration
+
+Pydantic is the natural pairing for structured LLM output in Python. It handles schema generation, type coercion, custom validators, and serialization — all the things you would otherwise write by hand.
+
+For complex schemas with nested models and conditional fields:
+
+```python
+from pydantic import BaseModel, Field
+from typing import Literal
+from openai import OpenAI
+
+class Address(BaseModel):
+    street: str
+    city: str
+    country: str = "US"
+
+class Lead(BaseModel):
+    name: str
+    email: str
+    company: str
+    lead_score: int = Field(ge=0, le=100, description="Estimated fit score 0-100")
+    source: Literal["inbound", "outbound", "referral"]
+    address: Address | None = None
+    tags: list[str] = Field(default_factory=list)
+
+client = OpenAI()
+
+response = client.beta.chat.completions.parse(
+    model="gpt-4o-2024-08-06",
+    messages=[
+        {
+            "role": "system",
+            "content": "Extract lead information. Estimate lead_score based on company signals."
+        },
+        {
+            "role": "user",
+            "content": """
+            Inbound lead from our website:
+            Sofia Esposito, Director of AI at NebulaFinance (sofia.e@nebulafinance.com)
+            Based in Milan, Italy. Mentioned they're evaluating 3 vendors.
+            Tags: enterprise, fintech, EU
+            """
+        }
+    ],
+    response_format=Lead,
+)
+
+lead = response.choices[0].message.parsed
+print(lead.model_dump_json(indent=2))
+```
+
+The `Field(ge=0, le=100)` constraint is reflected in the JSON Schema passed to the API — the model cannot return a value outside that range. Nested models like `Address` are handled recursively.
+
+For generating the JSON Schema manually (useful when you need to pass it to non-OpenAI APIs):
+
+```python
+schema = Lead.model_json_schema()
+print(schema)  # Full JSON Schema dict — pass this to tool definitions
+```
+
+## Validation and Error Handling Workflow
+
+```mermaid
+flowchart TD
+    A[Prompt + schema] --> B[LLM API call]
+    B --> C{API-level schema enforced?}
+    C -->|Yes — OpenAI Structured Outputs| D[Pydantic parse]
+    C -->|No — JSON mode / tool use| E[json.loads]
+    E --> F{Valid JSON?}
+    F -->|No| G[Append error to messages]
+    G --> H{Retries left?}
+    H -->|Yes| B
+    H -->|No| I[Raise RuntimeError]
+    F -->|Yes| D
+    D --> J{Pydantic validation passes?}
+    J -->|No| K[Append validation error]
+    K --> H
+    J -->|Yes| L[Return typed object]
+    L --> M[Downstream pipeline]
+```
+
+## Choosing an Approach
+
+The decision tree I use:
+
+**You're using OpenAI and need maximum reliability** — use OpenAI Structured Outputs with Pydantic. The constrained decoding guarantee plus typed objects is the highest-confidence path. Works well for schemas with up to ~20 fields.
+
+**You're using Claude** — use tool use with `tool_choice` forced to your extraction tool. Define your schema as the tool's `input_schema`. This is Claude's native structured output mechanism and it is reliable.
+
+**You need to support multiple models** — tool use is the most portable approach since function calling is standardized across OpenAI, Claude, Gemini, and most open-weight models via APIs like Ollama and vLLM.
+
+**You're prototyping fast** — JSON mode plus a Pydantic `model_validate` call is the fastest setup. Accept that you will get occasional schema mismatches in exchange for speed.
+
+**You're using open-weight models** — look at llama.cpp's `--json-schema` flag, vLLM's guided decoding (via `guided_json`), or Outlines for grammar-based constrained generation. These tools bring OpenAI-style schema enforcement to self-hosted models.
+
+```python
+# vLLM guided decoding example
+from openai import OpenAI  # vLLM exposes OpenAI-compatible API
+from pydantic import BaseModel
+
+class Sentiment(BaseModel):
+    label: Literal["positive", "negative", "neutral"]
+    confidence: float
+    reasoning: str
+
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="not-needed")
+
+schema = Sentiment.model_json_schema()
+response = client.chat.completions.create(
+    model="meta-llama/Llama-3-8b-instruct",
+    messages=[{"role": "user", "content": "Analyze: 'This API keeps breaking our pipeline'"}],
+    extra_body={"guided_json": schema}  # vLLM-specific
+)
+```
+
+## Common Pitfalls
+
+**Forgetting to mention the schema in the system prompt.** Even with API-level enforcement, models perform better when the system prompt explicitly describes the expected output. "Return a JSON object with fields: name (string), email (string), company (string)" beats relying on the schema alone.
+
+**Overly complex schemas.** Schemas with more than 30 fields, deep nesting, or many `oneOf`/`anyOf` branches hit model limitations. Constrained decoding gets slower and more prone to errors. Flatten schemas where possible and split complex extractions into multiple calls.
+
+**Not handling `null` vs. missing keys.** JSON Schema `required` tells the model which keys must appear. But a model might return `"role": null` instead of omitting the key entirely. Your Pydantic model should use `str | None = None` not just `str` for optional fields, and your downstream code should handle both cases.
+
+**Using JSON mode for streaming.** JSON mode responses are only valid at completion — a streaming partial JSON response is not parseable. Either disable streaming or use a streaming-aware JSON parser like `ijson`.
+
+**Assuming schema enforcement is free.** Constrained decoding adds latency, especially for complex schemas. On OpenAI's API, Structured Outputs calls can be 10–30% slower than plain JSON mode calls. Budget for this in latency-sensitive paths.
+
+**Not logging raw responses.** When a validation error hits production, you want the raw model output to debug it. Always log `response.choices[0].message.content` before parsing, not just the parsed result.
+
+## Verdict
+
+Structured output LLM is not a single feature — it is a spectrum, and where you land on it should match your production requirements.
+
+For most teams building in 2026: start with OpenAI Structured Outputs and Pydantic if you're on OpenAI, or tool use with `tool_choice` forced if you're on Claude. Add a retry loop with error feedback. Log raw responses. Add Pydantic validators for semantic constraints. That stack handles the overwhelming majority of real extraction, classification, and agentic workflows reliably.
+
+The prefill trick and plain JSON mode are fine for exploration, but they are not something I would wire into a production pipeline that runs thousands of times a day. The extra reliability from real schema enforcement is worth the marginal setup cost.
+
+Open-weight models are closing the gap. vLLM's guided decoding and Outlines are genuinely production-ready for many schemas. If you're self-hosting, test them — the latency overhead is lower than you might expect.
+
+---
 
 ## FAQ
 
-### Is this only for advanced AI teams?
+### Does JSON mode work with streaming?
 
-No. The concepts are useful for small teams as well, but the implementation should match the team's maturity. A small team can start with a narrow workflow, manual review, and simple logs. A larger organization may need policy controls, shared evaluation infrastructure, and formal approval paths.
+Not directly. Streaming returns partial JSON tokens that are not individually parseable. For streaming use cases you have two options: buffer the full stream before parsing (giving up the latency benefit of streaming), or use a streaming JSON parser that can handle partial documents. The `ijson` Python library handles the latter. For most extraction use cases, non-streaming is fine — the latency is dominated by the model computation, not token delivery.
 
-### What is the biggest risk?
+### What happens if the model's schema enforcement fails anyway?
 
-The biggest risk is not that the model makes one obvious mistake. The bigger risk is that a workflow quietly produces plausible but wrong output at scale. This is why evaluation, review, and monitoring matter. Treat AI output as work that needs quality control, not as magic.
+API-level schema enforcement (OpenAI Structured Outputs, vLLM guided decoding) has a very low failure rate but is not zero — edge cases in very complex schemas can still produce invalid output. Always wrap your parsing in a try/except and have a fallback. The fallback can be a retry with a simpler schema, a human review queue, or a graceful degradation that logs the failure and skips the record.
 
-### How long does adoption take?
+### Can I use structured output with vision models?
 
-A useful prototype can often be built quickly, but production adoption takes longer because teams need permissions, evaluation, documentation, and user feedback. Plan for iteration. The first version should teach you which assumptions were wrong.
+Yes. OpenAI's `gpt-4o` with Structured Outputs supports image inputs alongside schema enforcement. Pass the image in the `content` array as a `image_url` block, then specify `response_format` as usual. This works well for extracting data from receipts, forms, screenshots, and diagrams. Claude's vision models support tool use, so the tool-as-schema pattern works with image inputs on Anthropic's API too.
 
-### Should we build or buy?
+### How do I handle schemas that vary based on input?
 
-Buy when the workflow is common, the vendor integrates with your stack, and the risk profile is acceptable. Build when the workflow depends on proprietary context, custom tools, or differentiated product behavior. Many teams use a hybrid approach: buy model access or infrastructure, then build the workflow layer themselves.
+Use a discriminated union pattern. Define a base schema with a `type` field, then define per-type schemas. With Pydantic, `Annotated[Union[TypeA, TypeB], Field(discriminator="type")]` generates the right JSON Schema. With OpenAI Structured Outputs, pass the discriminated union schema. The model reads the schema, infers which variant applies from the input, and populates the right fields. Avoid asking the model to infer the type internally — explicit discriminator fields produce far more reliable results.
 
-### How should success be measured?
+### Is tool use for structured output "cheating"?
 
-Measure outcomes rather than excitement. Good measures include task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership. Add human review quality and user adoption data. If people try the system once and return to the old process, the rollout has not succeeded.
-
-## Final Takeaway
-
-This approach is valuable when it is connected to a real workflow, evaluated against real examples, and operated with clear boundaries. The winning teams will not be the ones with the longest list of AI tools. They will be the teams that turn AI into repeatable, observable, and trusted work.
-
-Start small, measure honestly, and improve the system with evidence. Use model APIs, open-weight models, prompt templates, embeddings, vector databases, evaluation suites, logs, and guardrails; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations where they fit, but keep the focus on more reliable AI products with measurable quality, cost, and latency controls; clearer tool selection and workflows that save time without creating hidden risk. That is the difference between an impressive demo and a capability that keeps paying off after the novelty fades.
+No — it is the intended design. Anthropic's documentation explicitly recommends using tool use for structured output extraction, even when you have no actual tool to call. The model treats tool arguments as a strongly-typed output channel, which is exactly what you want. The distinction between "real" tool calls and "fake" schema-extraction tool calls is invisible to the model and irrelevant to reliability.

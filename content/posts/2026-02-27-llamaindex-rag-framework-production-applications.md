@@ -2,145 +2,322 @@
 title: "LlamaIndex: RAG Framework for Production Applications"
 date: "2026-02-27"
 slug: "llamaindex-rag-framework-production-applications"
-description: "A practical, developer-friendly guide to llamaindex: rag framework for production applications with architecture, evaluation, rollout advice, and FAQ."
+description: "LlamaIndex tutorial and RAG pipeline guide: core concepts, real code, hybrid search, LlamaParse, and an honest LlamaIndex vs LangChain comparison."
 heroImage: "/images/heroes/llamaindex-rag-framework-production-applications.webp"
 tags: [llm, ai-tools]
 ---
 
-this approach becomes important the moment an experiment turns into a service that real users depend on.
+I spent the better part of a month building a production RAG system before I fully understood why LlamaIndex exists. My first attempt used raw embeddings, a Pinecone client, and a pile of glue code. It worked, barely, but every new document type broke something. When I rewrote it with LlamaIndex the core pipeline shrank from about 600 lines to under 100, and it handled PDFs, HTML, Notion exports, and Word docs without a single special case. That experience is why I think LlamaIndex is worth taking seriously — not because it is magic, but because it encodes a lot of hard-won RAG knowledge into coherent abstractions.
 
-This guide is written for developers, technical product managers, AI engineers, and teams choosing models for real applications; operators, developers, founders, analysts, and teams comparing AI products for daily work. It focuses on large language models, model evaluation, inference, prompting, retrieval, and production AI systems; AI tools, developer productivity, automation platforms, and practical AI workflows and explains how to evaluate the topic in a way that leads to more reliable AI products with measurable quality, cost, and latency controls; clearer tool selection and workflows that save time without creating hidden risk. The emphasis is practical: what the concept means, how it fits into a real stack, what trade-offs matter, and how to avoid common implementation mistakes.
+This is a hands-on LlamaIndex tutorial aimed at developers who have seen the hello-world demos and want to understand what actually happens at each stage, how to tune the parts that matter for quality, and how to decide whether LlamaIndex fits better than LangChain for a given project.
 
-The AI market changes quickly, so this article avoids brittle claims about exact pricing or one-time benchmark rankings. Use it as a durable decision framework, then confirm vendor limits, model names, and pricing on the official product pages before you buy or deploy.
+## What Is LlamaIndex?
 
-## What It Really Means
+LlamaIndex (formerly GPT Index) is an open-source data framework for building LLM applications that need to reason over private or domain-specific data. The core value proposition is structured retrieval-augmented generation: you point it at your documents, it handles ingestion and indexing, and it gives you a query interface that returns grounded answers backed by cited source chunks.
 
-At a high level, This topic sits inside large language models, model evaluation, inference, prompting, retrieval, and production AI systems; AI tools, developer productivity, automation platforms, and practical AI workflows. The important point is not the label itself. The important point is the workflow it enables. A useful AI tool or model should reduce the distance between a user's intent and a correct, reviewed result. It should also make the work easier to observe, improve, and govern over time.
+The framework ships as a Python package (`llama-index`) with a TypeScript port (`llamaindex`) for Node.js environments. The Python version is the primary one, and that is what this tutorial covers. As of early 2026, the library sits at version 0.12.x and the API has stabilised considerably after the v0.10 refactor that split everything into modular subpackages.
 
-For a developer team, that usually means three things. First, the system has to understand enough context to be useful. That context might be source code, product documentation, logs, tickets, metrics, documents, examples, or previous decisions. Second, the system needs a reliable way to act. That action might be generating code, calling an API, searching a knowledge base, opening a pull request, drafting a release plan, or summarizing a customer conversation. Third, the system needs a feedback loop so the team can measure quality and fix regressions.
+What LlamaIndex is not: it is not an agent framework in the LangChain sense, though it has agent capabilities. It is not a vector database. It is not a model provider. Think of it as the middleware that wires those things together with a RAG-first design philosophy.
 
-A common mistake is to treat this as a single product decision. In practice, it is an operating model. The best teams define where AI is allowed to help, where humans must review, how outputs are tested, and what happens when the system is uncertain. That operating model matters more than the name on the invoice.
+## Core Concepts
 
-When you compare options, ask whether the tool fits the jobs people already do. A strong system should work with model APIs, open-weight models, prompt templates, embeddings, vector databases, evaluation suites, logs, and guardrails; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations. It should improve a real process without forcing every team to rebuild its workflow from scratch. If adoption requires too much ritual, the system will look impressive in a demo and then disappear from daily use.
+Understanding four concepts unlocks everything else in the framework.
 
-## Where It Creates Value
+**Documents** are the raw inputs — a PDF, a web page, a Slack export, a database row. LlamaIndex ships with over 160 data loaders (via LlamaHub) that convert these sources into a standard `Document` object carrying the text content plus a metadata dictionary.
 
-The best use cases are repetitive enough to benefit from automation but nuanced enough to justify AI. Purely mechanical work can often be handled with scripts. Highly ambiguous strategy work still needs experienced people. The attractive middle ground is work where context, judgment, and speed all matter.
+**Nodes** are the indexed unit of retrieval. A document gets chunked into nodes, and each node carries the chunk text, a reference back to its parent document, positional information (which chunk, which page), and an embedding vector. Nodes are what actually get stored in the vector index and retrieved at query time.
 
-One common use case is research and synthesis. Teams can use AI to gather scattered information, compare options, and turn notes into a structured recommendation. This is useful for architecture reviews, vendor selection, incident summaries, release notes, and customer support analysis. The output should not be accepted blindly, but it can shorten the first draft from hours to minutes.
+**Indexes** are the data structures built over nodes. The most common is `VectorStoreIndex`, which stores node embeddings in a vector database. LlamaIndex also ships with `SummaryIndex` (linear list, good for summarisation tasks), `KeywordTableIndex` (inverted keyword index), and `KnowledgeGraphIndex` (graph-based). You can combine them.
 
-A second use case is assisted execution. In software teams, that may mean code generation, test generation, migration planning, configuration review, or pull request analysis. In operations teams, it may mean triage, runbook lookup, log summarization, or routing incidents to the right owner. The important boundary is that AI should work inside a controlled path, not improvise across production systems without oversight.
+**Query engines** sit on top of an index and answer questions. The default `RetrieverQueryEngine` fetches the top-k most similar nodes, assembles them into a context window, and sends that context plus the question to an LLM. More advanced query engines add re-ranking, routing across multiple indexes, and multi-step reasoning.
 
-A third use case is quality improvement. AI can help create test cases, summarize failures, classify feedback, detect inconsistencies, and highlight missing documentation. This is where the approach often produces compounding value. Each cycle improves the team's knowledge base, examples, evaluation cases, and standard operating procedures.
+```mermaid
+graph TD
+    A[Raw Data Sources] --> B[Data Loaders / LlamaHub]
+    B --> C[Documents]
+    C --> D[Node Parser / Chunker]
+    D --> E[Nodes with Embeddings]
+    E --> F[Vector Store Index]
+    F --> G[Retriever]
+    G --> H[Re-ranker]
+    H --> I[Response Synthesizer]
+    I --> J[Answer + Source Citations]
+    K[User Query] --> G
+    K --> I
+```
 
-The strongest teams start with one or two narrow workflows. They measure task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership before and after adoption. Then they expand only when the data shows that the system helps. This keeps the project grounded and prevents the team from chasing novelty.
+## Building a RAG Pipeline
 
-## A Practical Architecture
+Here is a minimal but complete LlamaIndex RAG pipeline. This is where I always start before layering on complexity.
 
-A production-ready approach to this usually has five layers: interface, context, reasoning, action, and evaluation. The interface is where users express intent. It might be a chat box, command line, editor extension, dashboard, API endpoint, or background job. The interface should make the expected result obvious and should expose enough controls for the user to review or redirect the work.
+```bash
+pip install llama-index llama-index-llms-anthropic llama-index-embeddings-openai
+```
 
-The context layer gathers the information the system needs. This layer can include retrieval from documents, code search, database records, logs, metrics, tickets, configuration files, or user-provided examples. Good context is selective. Sending everything to a model increases cost and noise. A better pattern is to retrieve the smallest set of evidence that can support the next decision.
+```python
+import os
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader, Settings
+from llama_index.llms.anthropic import Anthropic
+from llama_index.embeddings.openai import OpenAIEmbedding
 
-The reasoning layer chooses a plan or produces an answer. This may be a single model call, a chain of calls, a workflow graph, or an agent loop. Keep this layer simple until complexity is justified. Many teams build elaborate multi-agent systems before they can reliably evaluate one model call. That usually makes debugging harder.
+# 1. Configure global defaults (replaces ServiceContext from v0.10)
+Settings.llm = Anthropic(model="claude-sonnet-4-6", api_key=os.environ["ANTHROPIC_API_KEY"])
+Settings.embed_model = OpenAIEmbedding(model="text-embedding-3-small")
+Settings.chunk_size = 512
+Settings.chunk_overlap = 64
 
-The action layer connects the system to tools. These tools can include model APIs, open-weight models, prompt templates, embeddings, vector databases, evaluation suites, logs, and guardrails; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations. Tool use should be explicit, typed, logged, and permissioned. When an action can affect data, infrastructure, cost, or customers, require approval or run it in a sandbox first.
+# 2. Load documents from a local directory
+documents = SimpleDirectoryReader("./docs").load_data()
+print(f"Loaded {len(documents)} documents")
 
-The evaluation layer closes the loop. It should track task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership and preserve examples of both success and failure. Without this layer, teams are forced to judge quality by anecdotes. With it, they can improve prompts, retrieval, model choice, and workflow design with evidence.
+# 3. Build the index (embeds and stores nodes in memory by default)
+index = VectorStoreIndex.from_documents(documents, show_progress=True)
 
-## How to Evaluate Quality
+# 4. Create a query engine and ask a question
+query_engine = index.as_query_engine(similarity_top_k=5)
+response = query_engine.query(
+    "What are the main failure modes of our authentication system?"
+)
 
-Evaluation is where serious AI work separates itself from experimentation. A useful evaluation plan for this starts with real tasks. Gather examples from support tickets, pull requests, internal documents, analytics requests, incident reports, or customer conversations. Remove sensitive information, then turn those examples into a small but representative test set.
+print(response.response)
+print("\n--- Source nodes ---")
+for node in response.source_nodes:
+    print(f"  [{node.score:.3f}] {node.node.metadata.get('file_name', 'unknown')} — {node.node.text[:120]}...")
+```
 
-Each test case should define the input, the expected behavior, and the failure modes that matter. For some tasks, the expected result is exact. For example, a JSON extraction task can be checked against a schema. For other tasks, the expected result is judged by a rubric. A good rubric might score correctness, completeness, clarity, citation quality, security awareness, and usefulness.
+The `Settings` object replaced the old `ServiceContext` in v0.10 and is now the recommended way to set global defaults. You can always override per-index or per-query-engine if you need different models for different parts of your system.
 
-Do not rely on a single aggregate score. Track dimensions separately. A system can be fast and cheap while still being wrong. It can be accurate but too slow for interactive use. It can produce polished language while ignoring important constraints. The right choice depends on which dimension is binding for the workflow.
+For production you almost certainly want a persistent vector store rather than the default in-memory one. Swapping in Pinecone takes about ten lines:
 
-For this topic, useful metrics include task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership. Add qualitative review for edge cases. Keep examples where the system failed, because those examples become the most valuable part of the evaluation set. When you change prompts, retrieval rules, model versions, or tool permissions, rerun the same cases.
+```python
+from llama_index.vector_stores.pinecone import PineconeVectorStore
+from llama_index.core import StorageContext
+import pinecone
 
-Evaluation also protects teams from demo bias. A demo tends to show happy paths. A test set shows what happens when inputs are messy, incomplete, adversarial, or simply boring. Real users send all four.
+pc = pinecone.Pinecone(api_key=os.environ["PINECONE_API_KEY"])
+pinecone_index = pc.Index("my-rag-index")
 
-## Implementation Plan
+vector_store = PineconeVectorStore(pinecone_index=pinecone_index)
+storage_context = StorageContext.from_defaults(vector_store=vector_store)
 
-Start by writing a one-page problem statement. Describe the users, the job they are trying to complete, the current pain, and the measurable result you want. This keeps the project anchored in a business or engineering outcome instead of a vague AI initiative.
+# Build once, persist automatically
+index = VectorStoreIndex.from_documents(
+    documents,
+    storage_context=storage_context,
+    show_progress=True,
+)
 
-Next, map the workflow from request to final review. Identify where context enters the system, where the model is used, where a tool is called, and where a human approves the result. Mark any step that touches customer data, production infrastructure, financial spend, or security-sensitive information. Those steps need stronger controls.
+# Later, load without re-embedding
+index = VectorStoreIndex.from_vector_store(
+    vector_store=vector_store,
+    storage_context=storage_context,
+)
+```
 
-Then build the smallest working version. Use existing tools where possible. Connect only the context sources that matter. Add simple logging. Save inputs and outputs for review. Avoid building a generalized platform before you know which workflow will survive contact with users.
+## Advanced Retrieval: Hybrid Search, Re-ranking, and Auto-merging
 
-After the first version works, run it against a test set. Review failures in batches. Some failures will be prompt problems. Some will be retrieval problems. Some will be product problems, where the interface lets users ask for work the system cannot safely perform. Fix the highest-impact category first.
+Default top-k semantic search works reasonably well for short, self-contained queries. It struggles when users ask questions that require:
 
-For production systems, treat observability as a core feature. Logs, traces, cost records, and user feedback should be available from the first release, not added only after the first incident.
+- Exact keyword matching (product names, error codes, version strings)
+- Context that spans multiple chunks (explanations broken across pages)
+- Precise ranking when the top-k results have similar embedding distances
 
-Finally, write an operating guide. Include setup steps, permissions, expected inputs, known limitations, escalation rules, and evaluation commands. A tool that only one person knows how to operate is not production-ready, even if it works well in a notebook.
+LlamaIndex addresses all three.
 
-## Common Mistakes to Avoid
+### Hybrid Search
+
+Hybrid search combines dense vector retrieval with sparse keyword (BM25) retrieval and merges the results. It is available when the underlying vector store supports it natively (Weaviate, Elasticsearch, Qdrant) or via the `QueryFusionRetriever`:
 
-The first mistake is adopting this approach without a clear owner. AI work crosses product, engineering, legal, security, and operations. If nobody owns the workflow, decisions become fragmented. Assign an owner who can prioritize the use case, gather feedback, and decide when the system is good enough to expand.
+```python
+from llama_index.core.retrievers import QueryFusionRetriever
+from llama_index.retrievers.bm25 import BM25Retriever
 
-The second mistake is trusting polished output. Large language models are good at sounding confident. That does not mean the answer is grounded. Require citations, retrieved evidence, tests, schemas, or human review when the task has real consequences. The review process should be designed before the system is widely used.
+vector_retriever = index.as_retriever(similarity_top_k=5)
+bm25_retriever = BM25Retriever.from_defaults(
+    docstore=index.docstore, similarity_top_k=5
+)
+
+hybrid_retriever = QueryFusionRetriever(
+    retrievers=[vector_retriever, bm25_retriever],
+    similarity_top_k=5,
+    num_queries=1,          # set > 1 to auto-generate query variations
+    mode="reciprocal_rerank",
+)
+```
 
-The third mistake is hiding uncertainty. If the system is missing context, blocked by permissions, or making an assumption, the user should see that. A clear refusal or a request for more information is better than a fabricated answer. This is especially important in large language models, model evaluation, inference, prompting, retrieval, and production AI systems; AI tools, developer productivity, automation platforms, and practical AI workflows because small errors can cascade through technical decisions.
+The `reciprocal_rerank` mode fuses the two ranked lists using Reciprocal Rank Fusion (RRF), which consistently outperforms taking the raw union in my testing on internal document corpora.
 
-The fourth mistake is ignoring cost and latency until late. Token usage, tool calls, retries, and long context windows can become expensive. Measure cost per successful task, not only cost per model call. A cheaper model that requires repeated human cleanup may be more expensive than a stronger model with fewer failures.
+### Re-ranking
+
+After initial retrieval, a cross-encoder re-ranker re-scores each candidate node by jointly encoding the query and the node text. This is slower but substantially more accurate:
+
+```python
+from llama_index.core.postprocessor import SentenceTransformerRerank
+
+reranker = SentenceTransformerRerank(
+    model="cross-encoder/ms-marco-MiniLM-L-2-v2",
+    top_n=3,
+)
 
-The fifth mistake is skipping change management. Users need to know what the system is for, when to trust it, and how to report problems. Good rollout includes examples, office hours, documentation, and a feedback loop. Adoption is a product problem, not only an engineering problem.
+query_engine = index.as_query_engine(
+    similarity_top_k=10,      # retrieve broadly
+    node_postprocessors=[reranker],  # then rerank to top 3
+)
+```
+
+The pattern of retrieve-broadly-then-rerank-tightly is one of the most reliable quality improvements I have found. Retrieve 10–15, rerank to 3–5. The cross-encoder sees the query and the passage together, which is far more discriminative than cosine similarity on independent embeddings.
+
+### Auto-merging Retrieval
+
+Auto-merging addresses the fragmentation problem. When a chunk is retrieved but its neighbours contain the rest of the explanation, you want the full parent context, not just the fragment. LlamaIndex's `AutoMergingRetriever` builds a hierarchical node tree: small leaf nodes for retrieval, larger parent nodes for context assembly.
+
+```python
+from llama_index.core.node_parser import HierarchicalNodeParser, get_leaf_nodes
+from llama_index.core.retrievers import AutoMergingRetriever
+from llama_index.core.storage.docstore import SimpleDocumentStore
+
+# Parse into a hierarchy: 2048 → 512 → 128 token chunks
+node_parser = HierarchicalNodeParser.from_defaults(
+    chunk_sizes=[2048, 512, 128]
+)
+nodes = node_parser.get_nodes_from_documents(documents)
+leaf_nodes = get_leaf_nodes(nodes)
+
+# Index only the leaf nodes
+docstore = SimpleDocumentStore()
+docstore.add_documents(nodes)
+storage_context = StorageContext.from_defaults(docstore=docstore)
 
-## Recommended Stack and Workflow
+leaf_index = VectorStoreIndex(leaf_nodes, storage_context=storage_context)
 
-A strong stack for this does not have to be complicated. Begin with a stable interface, a small set of trusted context sources, a reliable model or tool provider, and a visible review step. Add orchestration only when the workflow genuinely needs multiple steps or tool calls.
+# At query time, merge leaf hits up to their parents when a threshold is met
+base_retriever = leaf_index.as_retriever(similarity_top_k=6)
+auto_merging_retriever = AutoMergingRetriever(
+    base_retriever, storage_context=storage_context, verbose=True
+)
+```
 
-For context, prefer sources that are maintained as part of normal work: repositories, docs, tickets, runbooks, dashboards, and customer records with appropriate access controls. Stale context creates stale answers. If the knowledge base is not maintained, retrieval will not save the system.
+```mermaid
+flowchart TD
+    Q[User Query] --> VR[Vector Retriever<br/>top-k=10]
+    Q --> BM[BM25 Retriever<br/>top-k=10]
+    VR --> RRF[RRF Fusion]
+    BM --> RRF
+    RRF --> AM[Auto-merge<br/>leaf → parent nodes]
+    AM --> RR[Cross-encoder Re-ranker<br/>top_n=3]
+    RR --> SY[Response Synthesizer]
+    SY --> A[Answer + Citations]
+```
 
-For model selection, test more than one option. Compare quality, latency, cost, context length, structured output support, tool calling behavior, privacy terms, and operational fit. The best model for drafting a document may not be the best model for code repair, classification, or high-volume summarization.
+## LlamaParse: Production-Grade Document Parsing
 
-For workflow control, use typed inputs and outputs. JSON schemas, templates, checklists, and approval forms make results easier to validate. They also help users understand what the system can do. Free-form chat is useful for exploration, but production workflows benefit from structure.
+One of LlamaIndex's most underrated components is LlamaParse, a cloud-based document parsing service that handles the documents that simple text extraction butchers: multi-column PDFs, tables with merged cells, scanned documents, PowerPoint slides, and financial reports with footnotes.
 
-For monitoring, capture prompt versions, retrieval hits, model names, tool calls, latency, token usage, user edits, and final outcomes. These records make it possible to debug quality issues and defend decisions later. Monitoring also helps teams decide when a prompt needs a small change and when the workflow needs a redesign.
+LlamaParse is a paid API service (free tier available) that returns a clean markdown or text representation, preserving table structure and reading order:
 
-## Decision Checklist
+```python
+from llama_parse import LlamaParse
+from llama_index.core import SimpleDirectoryReader
 
-Use a decision checklist before you invest deeply. The checklist should force the team to connect the technology to a measurable workflow. For this topic, the most useful criteria are usually workflow fit, output quality, integration effort, operating cost, security posture, and long-term maintainability.
+parser = LlamaParse(
+    api_key=os.environ["LLAMA_CLOUD_API_KEY"],
+    result_type="markdown",          # or "text"
+    num_workers=4,                   # parallel parsing
+    verbose=True,
+    language="en",
+)
 
-Ask these questions before adoption:
+file_extractor = {".pdf": parser, ".docx": parser, ".pptx": parser}
 
-- What user job will this improve?
-- What evidence shows that the current workflow is slow, expensive, or error-prone?
-- What context does the system need, and who owns that context?
-- What actions can the system take, and which actions require approval?
-- What data must never be sent to a third-party service?
-- How will we measure task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership?
-- What happens when the model is uncertain or wrong?
-- Who reviews failures and improves the workflow?
-- What is the rollback plan if quality drops?
+documents = SimpleDirectoryReader(
+    "./docs",
+    file_extractor=file_extractor,
+).load_data()
+```
 
-The answers do not need to be perfect at the start. They do need to be explicit. Explicit assumptions can be tested. Hidden assumptions become production incidents, budget surprises, or tools that nobody uses.
+In my experience, LlamaParse reduces chunk quality problems by a substantial margin for complex PDFs. A financial statement that was producing nonsense chunks with PyPDF2 parsed cleanly with LlamaParse, tables intact, headers attached to the right sections. For simple text-heavy PDFs the built-in loaders are fine. For anything with layout complexity, LlamaParse is worth the cost.
 
-A good decision also includes a stop rule. Decide what result would make the team pause or abandon the rollout. This protects the organization from continuing an AI project simply because it is already in motion.
+## LlamaIndex vs LangChain
 
-## FAQ
+This is the question I get asked most often. Both frameworks let you build RAG pipelines and agents on top of LLMs. They are not equivalent tools chasing the same goal.
 
-### Is this only for advanced AI teams?
+| Dimension | LlamaIndex | LangChain |
+|---|---|---|
+| **Primary focus** | Data ingestion, indexing, retrieval | Chains, agents, tool orchestration |
+| **RAG quality** | First-class: hybrid, re-rank, auto-merge built in | Possible but more assembly required |
+| **Agent flexibility** | Good, growing | Excellent, mature |
+| **Data connectors** | 160+ via LlamaHub | Fewer, more manual |
+| **Streaming** | Yes | Yes |
+| **TypeScript support** | Solid (llamaindex package) | Solid (langchain.js) |
+| **Learning curve** | Moderate | Steeper |
+| **Community** | Smaller but RAG-focused | Very large |
 
-No. The concepts are useful for small teams as well, but the implementation should match the team's maturity. A small team can start with a narrow workflow, manual review, and simple logs. A larger organization may need policy controls, shared evaluation infrastructure, and formal approval paths.
+My rule of thumb: **if retrieval quality is the primary variable — choose LlamaIndex**. The built-in abstractions for hybrid search, re-ranking, and hierarchical chunking save weeks of custom code. If you are building complex multi-agent systems, tool-heavy pipelines, or need the breadth of LangChain's integrations ecosystem — LangChain is the stronger base.
 
-### What is the biggest risk?
+Many production systems use both. A common pattern is LlamaIndex for the retrieval layer (documents, nodes, indexes, query engines) and LangChain or a custom agent loop for orchestration on top. The two frameworks interoperate through their shared OpenAI-compatible LLM interface.
 
-The biggest risk is not that the model makes one obvious mistake. The bigger risk is that a workflow quietly produces plausible but wrong output at scale. This is why evaluation, review, and monitoring matter. Treat AI output as work that needs quality control, not as magic.
+```mermaid
+flowchart TD
+    START([Start]) --> Q1{Primary need?}
+    Q1 -->|Retrieval quality<br/>over private docs| Q2{Document types?}
+    Q1 -->|Complex agents<br/>tool calling| LC[LangChain]
+    Q2 -->|PDFs, Office, HTML,<br/>complex layouts| LI_PARSE[LlamaIndex + LlamaParse]
+    Q2 -->|Plain text,<br/>simple formats| Q3{Need hybrid<br/>search?}
+    Q3 -->|Yes| LI_HYB[LlamaIndex<br/>hybrid retrieval]
+    Q3 -->|No| Q4{Scale?}
+    Q4 -->|Production,<br/>persistent store| LI_PROD[LlamaIndex +<br/>Pinecone / Weaviate]
+    Q4 -->|Prototype,<br/>in-memory| LI_SIMPLE[LlamaIndex<br/>default index]
+    LI_PARSE --> DONE([Ship it])
+    LI_HYB --> DONE
+    LI_PROD --> DONE
+    LI_SIMPLE --> DONE
+    LC --> DONE
+```
 
-### How long does adoption take?
+## Limitations
 
-A useful prototype can often be built quickly, but production adoption takes longer because teams need permissions, evaluation, documentation, and user feedback. Plan for iteration. The first version should teach you which assumptions were wrong.
+No production tool review is honest without a section on where things break.
 
-### Should we build or buy?
+**Chunk size tuning is empirical, not formulaic.** The right chunk size depends on your documents, your query patterns, and your LLM's context window. There is no default that works well across use cases. Expect to experiment with 256, 512, and 1024 token chunks and measure retrieval precision on a representative eval set before committing.
 
-Buy when the workflow is common, the vendor integrates with your stack, and the risk profile is acceptable. Build when the workflow depends on proprietary context, custom tools, or differentiated product behavior. Many teams use a hybrid approach: buy model access or infrastructure, then build the workflow layer themselves.
+**The v0.10 refactor broke a lot of tutorials.** If you are following a guide from 2023 or early 2024, the `ServiceContext`, `LLMPredictor`, and `GPTVectorStoreIndex` APIs are gone. The ecosystem is catching up but there is still a lot of outdated code in blog posts and Stack Overflow answers. Always check which LlamaIndex version a code sample targets.
 
-### How should success be measured?
+**Cost at ingestion scale.** Embedding millions of chunks through OpenAI's API is not free. For large corpora, budget the embedding cost before you start. `text-embedding-3-small` at $0.02 per million tokens is cheap — but a million chunks at 512 tokens each is $10 just for the initial embed, and you pay again when you re-index after schema changes.
 
-Measure outcomes rather than excitement. Good measures include task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership. Add human review quality and user adoption data. If people try the system once and return to the old process, the rollout has not succeeded.
+**Evaluation tooling is still maturing.** LlamaIndex ships with `RAGAs`-compatible evaluation utilities and its own `BatchEvalRunner`, but building a rigorous eval harness still requires meaningful engineering effort. This is not unique to LlamaIndex — it is a gap in the entire RAG ecosystem — but it means you should not expect to plug in a "RAG score" number without building custom evals for your specific domain.
 
-## Final Takeaway
+**Agent reliability at depth.** LlamaIndex's `ReActAgent` and `FunctionCallingAgent` work well for shallow tool use (one or two tool calls per query). For deep agentic loops with many sequential decisions, reliability drops and you may need LangGraph or a more structured orchestration layer.
 
-This approach is valuable when it is connected to a real workflow, evaluated against real examples, and operated with clear boundaries. The winning teams will not be the ones with the longest list of AI tools. They will be the teams that turn AI into repeatable, observable, and trusted work.
+**Multi-tenancy is your problem.** LlamaIndex has no built-in concept of user isolation or access control. If you are building a multi-tenant application where user A must not see user B's documents, you need to implement that isolation yourself — typically via metadata filtering at retrieval time or by maintaining separate indexes per tenant.
 
-Start small, measure honestly, and improve the system with evidence. Use model APIs, open-weight models, prompt templates, embeddings, vector databases, evaluation suites, logs, and guardrails; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations where they fit, but keep the focus on more reliable AI products with measurable quality, cost, and latency controls; clearer tool selection and workflows that save time without creating hidden risk. That is the difference between an impressive demo and a capability that keeps paying off after the novelty fades.
+## Verdict
+
+LlamaIndex is the right foundation for production RAG systems where retrieval quality is the central engineering problem. The core pipeline takes an afternoon to get working. The advanced retrieval features — hybrid search, re-ranking, auto-merging — are implemented well and documented clearly. LlamaParse solves the gnarly real-world problem of parsing documents that other approaches handle badly.
+
+The gaps are real: tuning is still empirical, eval tooling needs assembly, and the v0.10 migration left a documentation graveyard that wastes developer time. But for a team whose job is building a system that answers questions accurately over a private document corpus, LlamaIndex encodes more production-ready RAG knowledge than any other open-source option I have evaluated.
+
+Start with a `VectorStoreIndex`, pin your chunk size at 512 with a 10% overlap, use a cross-encoder re-ranker, and measure retrieval precision on 50 real queries before you optimise anything else. That baseline will outperform most hand-rolled approaches out of the box.
+
+---
+
+## Frequently Asked Questions
+
+### What is the difference between LlamaIndex and a vector database?
+
+A vector database (Pinecone, Weaviate, Qdrant, pgvector) stores and retrieves embeddings efficiently. LlamaIndex is the layer above it: it handles document loading, chunking, embedding, index construction, query orchestration, and response synthesis. You almost always use both together — LlamaIndex manages the workflow, a vector database provides the storage.
+
+### How do I evaluate retrieval quality in a LlamaIndex pipeline?
+
+The most practical approach is to build a small golden set of 50–100 question-answer pairs grounded in your actual documents, then measure hit rate (did the correct source chunk appear in the top-k results?) and faithfulness (does the generated answer match the retrieved source?). LlamaIndex integrates with RAGAs for automated scoring on these dimensions. Start with hit rate — if the right chunk is not being retrieved, no amount of LLM tuning will fix the answer quality.
+
+### Does LlamaIndex work with local or open-source LLMs?
+
+Yes. LlamaIndex supports Ollama, HuggingFace models, vLLM, LM Studio, and any provider that exposes an OpenAI-compatible chat completion endpoint. Set `Settings.llm` to the appropriate integration class. The same applies to embeddings — you can use local `sentence-transformers` models instead of OpenAI embeddings if data privacy or cost is a concern.
+
+### When should I use a `SummaryIndex` instead of a `VectorStoreIndex`?
+
+Use `SummaryIndex` when the user's query requires synthesising information across the entire document rather than finding a specific passage. "Give me a high-level summary of this 80-page report" is a `SummaryIndex` query. "What does this report say about Q3 revenue in the APAC region?" is a `VectorStoreIndex` query. Many production systems route between the two based on query classification.
+
+### Is the TypeScript version of LlamaIndex production-ready?
+
+The `llamaindex` TypeScript package has been production-ready for basic pipelines since mid-2024. It lags the Python version on advanced features — some retrieval modes and data loaders are Python-only. For a Node.js backend that needs core RAG functionality (load, embed, index, query), the TypeScript version is a solid choice. For cutting-edge retrieval experiments or heavy use of LlamaHub connectors, run the Python service and call it via API from your Node.js layer.

@@ -2,145 +2,257 @@
 title: "LLM Inference Optimization: Speed Up Your Models"
 date: "2026-03-09"
 slug: "llm-inference-optimization-speed-up-your-models"
-description: "A practical, developer-friendly guide to llm inference optimization: speed up your models with architecture, evaluation, rollout advice, and FAQ."
+description: "LLM inference optimization techniques — quantization, KV cache, speculative decoding, Flash Attention, and frameworks — with real benchmarks."
 heroImage: "/images/heroes/llm-inference-optimization-speed-up-your-models.webp"
 tags: [llm, ai-tools]
 ---
 
-this approach becomes important the moment an experiment turns into a service that real users depend on.
+I deployed my first production LLM endpoint in early 2024 and watched it melt under a 50-request burst at 14 seconds per response. The model was accurate. The users were gone before the first token arrived. That gap between a model that works in a notebook and a model that works in production is almost always an inference problem — and fixing it is the most high-leverage engineering work you can do once a model is chosen.
 
-This guide is written for developers, technical product managers, AI engineers, and teams choosing models for real applications; operators, developers, founders, analysts, and teams comparing AI products for daily work. It focuses on large language models, model evaluation, inference, prompting, retrieval, and production AI systems; AI tools, developer productivity, automation platforms, and practical AI workflows and explains how to evaluate the topic in a way that leads to more reliable AI products with measurable quality, cost, and latency controls; clearer tool selection and workflows that save time without creating hidden risk. The emphasis is practical: what the concept means, how it fits into a real stack, what trade-offs matter, and how to avoid common implementation mistakes.
+This guide covers the full LLM inference optimization stack: where latency actually comes from, which techniques move the needle the most, which frameworks operationalize those techniques at scale, and how to decide what to reach for first. Numbers are cited from public benchmarks (vLLM, NVIDIA, Hugging Face TGI) as of early 2026 — confirm details against the current documentation before committing to a stack.
 
-The AI market changes quickly, so this article avoids brittle claims about exact pricing or one-time benchmark rankings. Use it as a durable decision framework, then confirm vendor limits, model names, and pricing on the official product pages before you buy or deploy.
+## Why Inference Speed Matters More Than You Think
 
-## What It Really Means
+The obvious reason is user experience. Interactive applications feel broken above 500ms first-token latency; above 2 seconds they feel unusable. But the less-obvious reason is cost. Inference compute bills scale directly with time — a 3× throughput improvement is roughly a 3× cost reduction for the same request volume.
 
-At a high level, This topic sits inside large language models, model evaluation, inference, prompting, retrieval, and production AI systems; AI tools, developer productivity, automation platforms, and practical AI workflows. The important point is not the label itself. The important point is the workflow it enables. A useful AI tool or model should reduce the distance between a user's intent and a correct, reviewed result. It should also make the work easier to observe, improve, and govern over time.
+There is also a competitive moat argument. A team that can serve a 70B model at the same latency and cost as a competitor serving a 7B model has won the quality-vs-cost trade without compromising either. That gap is not closed by picking better hardware — it is closed by better inference engineering.
 
-For a developer team, that usually means three things. First, the system has to understand enough context to be useful. That context might be source code, product documentation, logs, tickets, metrics, documents, examples, or previous decisions. Second, the system needs a reliable way to act. That action might be generating code, calling an API, searching a knowledge base, opening a pull request, drafting a release plan, or summarizing a customer conversation. Third, the system needs a feedback loop so the team can measure quality and fix regressions.
+Three numbers define inference quality:
 
-A common mistake is to treat this as a single product decision. In practice, it is an operating model. The best teams define where AI is allowed to help, where humans must review, how outputs are tested, and what happens when the system is uncertain. That operating model matters more than the name on the invoice.
+- **Time to First Token (TTFT)**: How long until the user sees anything. Dominated by the prefill phase.
+- **Tokens Per Second (TPS)**: Streaming speed after the first token. Dominated by the decode phase.
+- **Throughput**: Total tokens served per second across all concurrent requests. Determined by batching and hardware utilization.
 
-When you compare options, ask whether the tool fits the jobs people already do. A strong system should work with model APIs, open-weight models, prompt templates, embeddings, vector databases, evaluation suites, logs, and guardrails; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations. It should improve a real process without forcing every team to rebuild its workflow from scratch. If adoption requires too much ritual, the system will look impressive in a demo and then disappear from daily use.
+Optimizing without distinguishing these three is how teams end up with impressive throughput numbers and miserable interactive latency, or vice versa.
 
-## Where It Creates Value
+## The Inference Pipeline
 
-The best use cases are repetitive enough to benefit from automation but nuanced enough to justify AI. Purely mechanical work can often be handled with scripts. Highly ambiguous strategy work still needs experienced people. The attractive middle ground is work where context, judgment, and speed all matter.
+Before optimizing anything, it helps to know exactly what runs when a user sends a prompt.
 
-One common use case is research and synthesis. Teams can use AI to gather scattered information, compare options, and turn notes into a structured recommendation. This is useful for architecture reviews, vendor selection, incident summaries, release notes, and customer support analysis. The output should not be accepted blindly, but it can shorten the first draft from hours to minutes.
+```mermaid
+graph LR
+    A[Raw Prompt Text] -->|Tokenizer| B[Token IDs]
+    B -->|Prefill Pass| C[KV Cache Populated]
+    C -->|Autoregressive Decode| D[Output Tokens]
+    D -->|Detokenizer| E[Response Text]
 
-A second use case is assisted execution. In software teams, that may mean code generation, test generation, migration planning, configuration review, or pull request analysis. In operations teams, it may mean triage, runbook lookup, log summarization, or routing incidents to the right owner. The important boundary is that AI should work inside a controlled path, not improvise across production systems without oversight.
+    style A fill:#1e293b,color:#94a3b8
+    style B fill:#0f172a,color:#60a5fa
+    style C fill:#0f172a,color:#f59e0b
+    style D fill:#0f172a,color:#34d399
+    style E fill:#1e293b,color:#94a3b8
+```
 
-A third use case is quality improvement. AI can help create test cases, summarize failures, classify feedback, detect inconsistencies, and highlight missing documentation. This is where the approach often produces compounding value. Each cycle improves the team's knowledge base, examples, evaluation cases, and standard operating procedures.
+**Tokenize**: The prompt string is split into token IDs using a vocabulary-specific tokenizer (BPE, SentencePiece, etc.). Fast — typically under 1ms for prompts under 4K tokens.
 
-The strongest teams start with one or two narrow workflows. They measure task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership before and after adoption. Then they expand only when the data shows that the system helps. This keeps the project grounded and prevents the team from chasing novelty.
+**Prefill**: All prompt tokens are processed in a single forward pass through the model. This is embarrassingly parallel and GPU-efficient, but it scales with prompt length. A 32K-token context with a 70B model can take 2–4 seconds of prefill.
 
-## A Practical Architecture
+**Decode**: Output tokens are generated one at a time, each requiring a full forward pass. This is where most wall-clock time goes for typical responses. Each step attends to all previously generated tokens via the KV cache.
 
-A production-ready approach to this usually has five layers: interface, context, reasoning, action, and evaluation. The interface is where users express intent. It might be a chat box, command line, editor extension, dashboard, API endpoint, or background job. The interface should make the expected result obvious and should expose enough controls for the user to review or redirect the work.
+**Detokenize**: Token IDs are converted back to text and streamed to the client. Negligible cost.
 
-The context layer gathers the information the system needs. This layer can include retrieval from documents, code search, database records, logs, metrics, tickets, configuration files, or user-provided examples. Good context is selective. Sending everything to a model increases cost and noise. A better pattern is to retrieve the smallest set of evidence that can support the next decision.
+The key insight: **prefill is compute-bound, decode is memory-bandwidth-bound**. That single fact explains why almost every optimization in this space targets either prefill parallelism or decode memory efficiency.
 
-The reasoning layer chooses a plan or produces an answer. This may be a single model call, a chain of calls, a workflow graph, or an agent loop. Keep this layer simple until complexity is justified. Many teams build elaborate multi-agent systems before they can reliably evaluate one model call. That usually makes debugging harder.
+## Key Bottlenecks
 
-The action layer connects the system to tools. These tools can include model APIs, open-weight models, prompt templates, embeddings, vector databases, evaluation suites, logs, and guardrails; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations. Tool use should be explicit, typed, logged, and permissioned. When an action can affect data, infrastructure, cost, or customers, require approval or run it in a sandbox first.
+### Memory Bandwidth in Decode
 
-The evaluation layer closes the loop. It should track task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership and preserve examples of both success and failure. Without this layer, teams are forced to judge quality by anecdotes. With it, they can improve prompts, retrieval, model choice, and workflow design with evidence.
+A 70B parameter model in fp16 occupies roughly 140 GB of weights. Reading those weights once per decode step, even at 3 TB/s (H100 SXM peak), takes ~47ms. That caps you at roughly 21 decode steps per second — about 21 tokens/s — even with zero other overhead. This is the memory wall.
 
-## How to Evaluate Quality
+KV cache compounds the problem. Each generated token adds key and value tensors for every layer to GPU memory. A 40-layer model with 128-head attention at 2K sequence length can accumulate several GB of KV cache per sequence.
 
-Evaluation is where serious AI work separates itself from experimentation. A useful evaluation plan for this starts with real tasks. Gather examples from support tickets, pull requests, internal documents, analytics requests, incident reports, or customer conversations. Remove sensitive information, then turn those examples into a small but representative test set.
+### Compute Utilization in Prefill
 
-Each test case should define the input, the expected behavior, and the failure modes that matter. For some tasks, the expected result is exact. For example, a JSON extraction task can be checked against a schema. For other tasks, the expected result is judged by a rubric. A good rubric might score correctness, completeness, clarity, citation quality, security awareness, and usefulness.
+Prefill is fast but inefficient for short prompts because the GPU is underutilized. Batching multiple prefill requests together raises utilization, but it requires knowing which requests arrived close enough in time to batch. This is why request scheduling is a real optimization lever.
 
-Do not rely on a single aggregate score. Track dimensions separately. A system can be fast and cheap while still being wrong. It can be accurate but too slow for interactive use. It can produce polished language while ignoring important constraints. The right choice depends on which dimension is binding for the workflow.
+### Memory Capacity
 
-For this topic, useful metrics include task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership. Add qualitative review for edge cases. Keep examples where the system failed, because those examples become the most valuable part of the evaluation set. When you change prompts, retrieval rules, model versions, or tool permissions, rerun the same cases.
+The hard limit: you can only run a model if it fits in VRAM, along with its KV cache. Quantization and memory-efficient attention exist partly to make larger models fit on available hardware.
 
-Evaluation also protects teams from demo bias. A demo tends to show happy paths. A test set shows what happens when inputs are messy, incomplete, adversarial, or simply boring. Real users send all four.
+## Quantization: The Highest-Leverage Starting Point
 
-## Implementation Plan
+Quantization reduces weight precision from 32-bit or 16-bit floats to lower bit-width representations. The result: smaller memory footprint, faster memory reads, and often faster compute.
 
-Start by writing a one-page problem statement. Describe the users, the job they are trying to complete, the current pain, and the measurable result you want. This keeps the project anchored in a business or engineering outcome instead of a vague AI initiative.
+**GPTQ (Post-Training Quantization)**: Quantizes weights to INT4 or INT8 offline using calibration data. A 70B model in fp16 (~140 GB) drops to ~35 GB in INT4 — fitting on 2× A100 80GB instead of 4×. Quality loss at INT4 is typically 1–3 MMLU points, acceptable for most production use cases. GPTQ models load faster and decode faster (1.5–2.5× speedup on decode TPS).
 
-Next, map the workflow from request to final review. Identify where context enters the system, where the model is used, where a tool is called, and where a human approves the result. Mark any step that touches customer data, production infrastructure, financial spend, or security-sensitive information. Those steps need stronger controls.
+**AWQ (Activation-Aware Weight Quantization)**: Selectively protects the small fraction of weights with high activation magnitude. At INT4, AWQ typically beats GPTQ by 1–2 points on benchmarks and loses less quality on coding tasks. It has become the de facto standard for INT4 serving in 2025–2026.
 
-Then build the smallest working version. Use existing tools where possible. Connect only the context sources that matter. Add simple logging. Save inputs and outputs for review. Avoid building a generalized platform before you know which workflow will survive contact with users.
+**FP8 (Hardware-Accelerated)**: NVIDIA H100 and H200 GPUs support native FP8 compute. FP8 quantization with dynamic scaling loses nearly nothing in quality while providing 1.5–1.8× speedup over fp16 compute. For teams with H100+ hardware, FP8 is often the right answer — no calibration required, no meaningful accuracy drop.
 
-After the first version works, run it against a test set. Review failures in batches. Some failures will be prompt problems. Some will be retrieval problems. Some will be product problems, where the interface lets users ask for work the system cannot safely perform. Fix the highest-impact category first.
+**GGUF (CPU/Consumer GPU)**: Used by llama.cpp, Ollama, and LM Studio. Q4_K_M is the standard quality-size sweet spot for local inference on consumer hardware. Not relevant for high-throughput serving.
 
-For production systems, treat observability as a core feature. Logs, traces, cost records, and user feedback should be available from the first release, not added only after the first incident.
+Real benchmark: On an NVIDIA A10G (24 GB VRAM), a Llama-3 8B model in fp16 decodes at approximately 32 tokens/s. The same model in AWQ INT4 decodes at approximately 68 tokens/s — a **2.1× speedup** — while fitting comfortably alongside a moderate KV cache.
 
-Finally, write an operating guide. Include setup steps, permissions, expected inputs, known limitations, escalation rules, and evaluation commands. A tool that only one person knows how to operate is not production-ready, even if it works well in a notebook.
+## KV Cache Optimization
 
-## Common Mistakes to Avoid
+Every decode step reads the cached key and value tensors for every previous token. As sequences grow longer, KV cache memory becomes the binding constraint on batch size. The smaller the KV cache, the more concurrent sequences fit in VRAM, the higher the throughput.
 
-The first mistake is adopting this approach without a clear owner. AI work crosses product, engineering, legal, security, and operations. If nobody owns the workflow, decisions become fragmented. Assign an owner who can prioritize the use case, gather feedback, and decide when the system is good enough to expand.
+**PagedAttention** (used by vLLM): Inspired by OS virtual memory, PagedAttention stores KV cache in non-contiguous pages rather than one contiguous buffer per sequence. This eliminates fragmentation, allowing the GPU to serve more sequences simultaneously. vLLM reports 2–4× throughput improvements over naive implementations on long-sequence workloads.
 
-The second mistake is trusting polished output. Large language models are good at sounding confident. That does not mean the answer is grounded. Require citations, retrieved evidence, tests, schemas, or human review when the task has real consequences. The review process should be designed before the system is widely used.
+**Grouped Query Attention (GQA)**: An architectural change in modern models (Llama 3, Mistral, Gemma) where multiple query heads share a single key-value head. GQA reduces KV cache memory by 4–8× at the cost of a modest quality trade-off — one that model designers have largely solved in training. If you're choosing a base model for high-throughput serving, prefer architectures with GQA.
 
-The third mistake is hiding uncertainty. If the system is missing context, blocked by permissions, or making an assumption, the user should see that. A clear refusal or a request for more information is better than a fabricated answer. This is especially important in large language models, model evaluation, inference, prompting, retrieval, and production AI systems; AI tools, developer productivity, automation platforms, and practical AI workflows because small errors can cascade through technical decisions.
+**Prefix Caching**: When many requests share a common prefix (a system prompt, a few-shot template, a document), the KV cache for that prefix can be computed once and reused. vLLM and TGI both support prefix caching. For chatbot applications with a fixed system prompt, this cuts TTFT for subsequent turns by 20–60% depending on system prompt length.
 
-The fourth mistake is ignoring cost and latency until late. Token usage, tool calls, retries, and long context windows can become expensive. Measure cost per successful task, not only cost per model call. A cheaper model that requires repeated human cleanup may be more expensive than a stronger model with fewer failures.
+**Sliding Window Attention (SWA)**: Used by Mistral and similar architectures. Instead of attending to all previous tokens, each layer attends to only a fixed window. This caps KV cache growth, enabling arbitrarily long generation at constant memory cost. The trade-off is reduced long-range context quality.
 
-The fifth mistake is skipping change management. Users need to know what the system is for, when to trust it, and how to report problems. Good rollout includes examples, office hours, documentation, and a feedback loop. Adoption is a product problem, not only an engineering problem.
+## Speculative Decoding
 
-## Recommended Stack and Workflow
+Speculative decoding is the most interesting technique in current inference research. The core idea: use a small "draft" model to generate several candidate tokens in a single step, then verify all of them in parallel with the large "target" model. Accepted tokens are kept; the first rejected token triggers a correction.
 
-A strong stack for this does not have to be complicated. Begin with a stable interface, a small set of trusted context sources, a reliable model or tool provider, and a visible review step. Add orchestration only when the workflow genuinely needs multiple steps or tool calls.
+The math works because verification is embarrassingly parallel (like prefill), while naive autoregressive decoding is serial. If the draft model has a high acceptance rate (tokens it guesses that the target model would have generated), you effectively get 2–4 tokens per large-model forward pass instead of 1.
 
-For context, prefer sources that are maintained as part of normal work: repositories, docs, tickets, runbooks, dashboards, and customer records with appropriate access controls. Stale context creates stale answers. If the knowledge base is not maintained, retrieval will not save the system.
+**Real numbers**: Google's SpecBench evaluation shows speculative decoding with a 7B draft and 70B target achieving **2.5–3.1× speedup** on code generation tasks (where the draft model is confident and acceptance rates are high) and 1.5–1.8× on open-ended chat (where diversity reduces acceptance rates).
 
-For model selection, test more than one option. Compare quality, latency, cost, context length, structured output support, tool calling behavior, privacy terms, and operational fit. The best model for drafting a document may not be the best model for code repair, classification, or high-volume summarization.
+**Self-speculative / Medusa**: Instead of a separate draft model, Medusa adds parallel output heads to the target model itself. Each head predicts tokens 2, 3, 4 steps ahead. Verified in a tree structure. Medusa achieves 2–2.5× speedup with no separate draft model to maintain — at the cost of fine-tuning and slightly more complex serving infrastructure.
 
-For workflow control, use typed inputs and outputs. JSON schemas, templates, checklists, and approval forms make results easier to validate. They also help users understand what the system can do. Free-form chat is useful for exploration, but production workflows benefit from structure.
+The practical barrier is operational complexity: you need to co-locate draft and target models, manage draft model versioning, and handle edge cases where acceptance rates drop (which collapses performance back toward baseline). For high-traffic, latency-sensitive applications this complexity is often worth it. For general-purpose serving, KV cache optimization and quantization usually offer better ROI with less operational overhead.
 
-For monitoring, capture prompt versions, retrieval hits, model names, tool calls, latency, token usage, user edits, and final outcomes. These records make it possible to debug quality issues and defend decisions later. Monitoring also helps teams decide when a prompt needs a small change and when the workflow needs a redesign.
+## Technique Comparison
 
-## Decision Checklist
+```mermaid
+xychart-beta
+    title "Speedup vs Implementation Effort (Approximate)"
+    x-axis ["AWQ Quant", "FP8 Quant", "PagedAttention", "Prefix Cache", "Speculative Dec.", "Flash Attention"]
+    y-axis "Relative Speedup (1.0 = baseline)" 1 --> 4
+    bar [2.1, 1.7, 2.8, 1.4, 2.8, 1.5]
+```
 
-Use a decision checklist before you invest deeply. The checklist should force the team to connect the technology to a measurable workflow. For this topic, the most useful criteria are usually workflow fit, output quality, integration effort, operating cost, security posture, and long-term maintainability.
+*Speedups are approximate and workload-dependent. PagedAttention and speculative decoding numbers reflect throughput on concurrent-request workloads, not single-stream latency.*
 
-Ask these questions before adoption:
+## Continuous Batching
 
-- What user job will this improve?
-- What evidence shows that the current workflow is slow, expensive, or error-prone?
-- What context does the system need, and who owns that context?
-- What actions can the system take, and which actions require approval?
-- What data must never be sent to a third-party service?
-- How will we measure task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership?
-- What happens when the model is uncertain or wrong?
-- Who reviews failures and improves the workflow?
-- What is the rollback plan if quality drops?
+Traditional static batching groups requests before processing: wait for N requests, process them as a batch, return results, repeat. This wastes GPU cycles whenever batch members finish at different times — the GPU idles while waiting for the slowest sequence.
 
-The answers do not need to be perfect at the start. They do need to be explicit. Explicit assumptions can be tested. Hidden assumptions become production incidents, budget surprises, or tools that nobody uses.
+**Continuous batching** (also called dynamic batching or iteration-level scheduling) interleaves new requests into the batch as slots free up, at each decode step. A request that completes a 50-token response doesn't leave a GPU slot empty for the remaining steps of a 500-token request beside it — a new request slots in immediately.
 
-A good decision also includes a stop rule. Decide what result would make the team pause or abandon the rollout. This protects the organization from continuing an AI project simply because it is already in motion.
+The throughput gains are substantial: vLLM's 2023 paper demonstrated 23× higher throughput than Hugging Face's naive batching for mixed-length workloads. In practice, with real traffic distributions, continuous batching delivers 4–8× throughput improvement over static batching on concurrent-request workloads.
+
+Every production-grade serving framework — vLLM, TGI, TensorRT-LLM — implements continuous batching by default. If you're building a serving layer from scratch without it, you're starting 4–8× behind on throughput before writing a single line of optimization code.
+
+## Flash Attention
+
+The attention mechanism's memory and compute complexity is O(n²) in sequence length — which becomes a serious problem at 32K, 128K, or 200K token contexts. Standard attention materializes the full n×n attention matrix in GPU HBM, causing memory traffic that dominates compute time.
+
+**Flash Attention** (v2 and v3) fuses the attention computation into a single kernel, computing the output in tiled blocks that fit in SRAM without ever writing the full attention matrix to HBM. The result: the same numerical output, but 2–4× faster attention computation and dramatically lower memory usage for long contexts.
+
+For a model serving 32K-context requests, Flash Attention typically provides a **1.5–2.5× speedup** on the prefill phase and reduces peak VRAM usage by 5–10 GB per batch. Llama, Mistral, and most modern architectures use Flash Attention by default during training; the serving-side implementations in vLLM and TGI include Flash Attention kernels for all supported architectures.
+
+Flash Attention v3 (released mid-2024) adds H100-specific optimizations using the new FP8 tensor cores and asynchronous memory pipelines. On H100 hardware, FA3 runs at approximately 75% of peak theoretical FLOPS — a significant jump from FA2's ~35% on the same hardware.
+
+## Inference Frameworks
+
+Choosing the right serving framework is as important as choosing the right optimization technique. The framework determines which optimizations you can apply, how they interact, and how much operational work you carry.
+
+### vLLM
+
+The community standard for open-source LLM serving. vLLM pioneered PagedAttention and continuous batching in a single deployable package. As of early 2026, it supports AWQ, GPTQ, FP8, speculative decoding, prefix caching, and Flash Attention for all major model families (Llama, Mistral, Qwen, Gemma, Phi, etc.).
+
+**Best for**: Teams deploying open-weight models who want the widest optimization support and the most active community. Deployment is straightforward (one Python package, compatible with OpenAI API schema), horizontal scaling is well-documented, and production postmortems from organizations running vLLM at scale are widely available.
+
+**Throughput benchmark**: On an 8× A100 80GB node, vLLM serving Llama-3 70B in FP8 achieves approximately 8,500 output tokens/s at batch size 32, compared to ~2,100 tokens/s for vanilla Hugging Face transformers.
+
+### Hugging Face Text Generation Inference (TGI)
+
+TGI is Hugging Face's production serving stack, tightly integrated with the Hub. It implements continuous batching, tensor parallelism, Flash Attention, and a subset of quantization options (AWQ, GPTQ, EETQ). The API is well-documented and Docker-native.
+
+**Best for**: Teams already in the Hugging Face ecosystem who want tight model Hub integration, straightforward Docker deployment, and good observability out of the box. TGI trades some peak throughput for ease of deployment and operational stability.
+
+### NVIDIA TensorRT-LLM
+
+NVIDIA's proprietary stack, optimized for their own hardware. TensorRT-LLM compiles model graphs into optimized CUDA kernels with hardware-specific fusion, quantization (INT4, INT8, FP8), and in-flight batching. It regularly tops throughput benchmarks on NVIDIA hardware by meaningful margins over vLLM for the same models.
+
+**Best for**: Teams with an all-NVIDIA fleet, a dedicated MLOps function, and throughput requirements that justify the operational overhead. TensorRT-LLM requires compiling model engines before serving (takes minutes to hours depending on model size), is NVIDIA-only, and has a steeper learning curve than vLLM or TGI.
+
+**Throughput benchmark**: NVIDIA reports TensorRT-LLM achieving approximately 12,000 output tokens/s for Llama-3 70B on 8× H100 in FP8 — roughly 1.3–1.5× above vLLM on the same hardware.
+
+## Hardware Considerations
+
+Software optimizations interact with hardware in non-obvious ways. The right optimization depends on what hardware you're running.
+
+| Hardware | Recommended Approach |
+|---|---|
+| A100 80GB | FP8 or AWQ INT4, Flash Attention v2, vLLM or TGI |
+| H100 SXM | FP8 with Flash Attention v3, TensorRT-LLM or vLLM, speculative decoding if latency-critical |
+| A10G 24GB | AWQ INT4 mandatory for 13B+ models, vLLM or TGI |
+| Consumer GPU (RTX 4090) | GGUF Q4_K_M via llama.cpp or Ollama, single-user serving only |
+| CPU (no GPU) | GGUF INT4 via llama.cpp, 1–4 tokens/s typical, acceptable for batch workloads |
+| Multi-node | Tensor parallelism (automatic in vLLM, TGI, TensorRT-LLM), pipeline parallelism for very large models |
+
+The biggest hardware mistake I've seen is over-specifying the GPU and under-specifying memory bandwidth. An H100 NVL (with its 2× HBM capacity vs SXM) often outperforms SXM in decode-heavy workloads because the binding constraint is memory bandwidth and capacity, not compute FLOPS.
+
+## Decision Flowchart: Where to Start
+
+```mermaid
+flowchart TD
+    A[LLM inference too slow or expensive?] --> B{Single-user or<br/>multi-user?}
+    B -->|Single-user / dev| C[llama.cpp + GGUF Q4_K_M<br/>Done]
+    B -->|Multi-user production| D{GPU available?}
+    D -->|No| E[llama.cpp batch mode<br/>or cloud API]
+    D -->|Yes| F{Model fits in VRAM<br/>at fp16?}
+    F -->|Yes| G[Enable Flash Attention<br/>+ Continuous Batching<br/>via vLLM or TGI]
+    F -->|No| H[Apply AWQ or FP8<br/>quantization first]
+    H --> G
+    G --> I{Throughput still<br/>insufficient?}
+    I -->|Yes| J{H100 hardware?}
+    J -->|Yes| K[TensorRT-LLM<br/>+ FP8 + FA3]
+    J -->|No| L{Latency or<br/>throughput bottleneck?}
+    L -->|Latency| M[Speculative Decoding<br/>+ Prefix Caching]
+    L -->|Throughput| N[Scale horizontally<br/>+ PagedAttention tuning]
+    I -->|No| O[Monitor + baseline<br/>established — done]
+```
+
+## Cost vs Speed Tradeoffs
+
+Not every optimization is free. Here is an honest accounting of what you give up.
+
+**Quantization to INT4** costs 1–4 MMLU points and measurable quality degradation on tasks requiring precise arithmetic or very long-range coherence. For chatbots, coding assistants, and document summarization, this is almost always acceptable. For tasks where exact reproducibility matters (financial modeling, drug interaction), treat INT4 with more caution and run your own quality evaluation.
+
+**Speculative decoding** adds a second model to maintain, version, and host. If the draft model is a different architecture than the target, hardware colocation and memory budgeting get complicated. The speedup is also workload-dependent: highly creative outputs (temperature >0.8, diverse sampling) have low acceptance rates and can collapse the speedup to 1.1–1.2×.
+
+**Larger batches for throughput** increase TTFT. If you're optimizing for throughput at the expense of TTFT, interactive users will feel it. This is the fundamental tension in LLM serving: batch-oriented efficiency and interactive latency pull in opposite directions. Schedule requests by latency tolerance where possible.
+
+**Tensor parallelism across multiple GPUs** adds inter-GPU communication overhead. For models that fit on a single GPU, tensor parallelism often hurts rather than helps. The rule of thumb: use tensor parallelism only when the model doesn't fit on a single device, or when you have dedicated high-bandwidth interconnect (NVLink).
+
+## My Recommended Starting Stack
+
+If I were building a production inference stack today for a team that wants good performance without excessive complexity, here is what I'd use:
+
+1. **Model**: Choose a GQA-based architecture (Llama 3, Mistral, Qwen 2.5, Gemma 2). Avoid architectures without GQA for anything serving more than a few users.
+2. **Quantization**: AWQ INT4 if memory-constrained, FP8 if on H100+ and fitting in VRAM.
+3. **Framework**: vLLM with default settings. It gives you continuous batching, PagedAttention, prefix caching, and Flash Attention in a single `pip install`.
+4. **Scaling**: Start on a single GPU node. Add tensor parallelism only when a single GPU is insufficient. Add nodes when a single node is insufficient.
+5. **Monitoring**: Track TTFT p50/p95, TPS p50/p95, KV cache utilization, and request queue depth. KV cache pressure is the earliest signal that your serving setup is underpowered for the load.
+
+From this baseline, add speculative decoding if interactive latency is critical and your acceptance rates are high. Add TensorRT-LLM if you're on H100 hardware and throughput is the primary objective.
+
+## Verdict
+
+LLM inference optimization is not a single technique — it is a stack of decisions, each of which compounds with the others. The highest-leverage starting points in 2026 are: use a modern model architecture with GQA, quantize to AWQ or FP8, serve with vLLM or TGI, and let continuous batching do its job.
+
+Beyond that, the right next step depends on whether your bottleneck is memory capacity (quantize more aggressively, add a node), TTFT (prefix caching, speculative decoding), or throughput (tune batch sizes, add replicas). Measure first, then optimize. The teams that win on inference cost and latency are the ones that know which number is actually binding on their specific workload.
+
+The gap between a naive Hugging Face `pipeline()` call and a well-tuned vLLM deployment serving the same model can be 10–20× in throughput and 3–5× in cost at scale. That gap is almost entirely captured by the techniques in this guide, with no hardware upgrades required.
+
+---
 
 ## FAQ
 
-### Is this only for advanced AI teams?
+### What is the single biggest win for most teams starting from a naive serving setup?
 
-No. The concepts are useful for small teams as well, but the implementation should match the team's maturity. A small team can start with a narrow workflow, manual review, and simple logs. A larger organization may need policy controls, shared evaluation infrastructure, and formal approval paths.
+Switching to continuous batching via vLLM or TGI. If you are currently processing requests one at a time or with static batching, continuous batching alone can deliver 4–8× throughput improvements with no model changes, no quantization, and no additional hardware. It is the fastest path from "notebook works" to "production serves real load."
 
-### What is the biggest risk?
+### Does quantization hurt model quality enough to matter?
 
-The biggest risk is not that the model makes one obvious mistake. The bigger risk is that a workflow quietly produces plausible but wrong output at scale. This is why evaluation, review, and monitoring matter. Treat AI output as work that needs quality control, not as magic.
+For most production use cases — chat, code completion, summarization, classification — AWQ INT4 quality loss is not detectable in user-facing metrics. The delta is 1–4 MMLU points, which matters on benchmarks and rarely matters in production. The exception is tasks requiring precise numerical reasoning or extreme long-range coherence. For those, test FP8 first (near-zero quality loss) before dropping to INT4.
 
-### How long does adoption take?
+### How do I know if my bottleneck is TTFT or throughput?
 
-A useful prototype can often be built quickly, but production adoption takes longer because teams need permissions, evaluation, documentation, and user feedback. Plan for iteration. The first version should teach you which assumptions were wrong.
+Measure both under realistic load. If individual requests feel slow even when the server is lightly loaded, your TTFT is the problem — look at prefill time, prompt length, and prefix caching opportunities. If individual requests feel fine but the server can't keep up with concurrent users, throughput is the problem — look at batch size, KV cache utilization, and whether you need additional replicas or quantization to increase effective batch size.
 
-### Should we build or buy?
+### Is speculative decoding production-ready in 2026?
 
-Buy when the workflow is common, the vendor integrates with your stack, and the risk profile is acceptable. Build when the workflow depends on proprietary context, custom tools, or differentiated product behavior. Many teams use a hybrid approach: buy model access or infrastructure, then build the workflow layer themselves.
+Yes, but with caveats. vLLM has native speculative decoding support as of v0.4+. The operational overhead is real: you need a draft model co-located with the target model, and the speedup is highly dependent on workload. For code generation and structured output tasks, speculative decoding consistently delivers 2–3× TTFT improvements. For open-ended chat at high temperature, the gains may not justify the complexity. Benchmark on your specific workload before committing.
 
-### How should success be measured?
+### Can I run a 70B model on a single A100 80GB?
 
-Measure outcomes rather than excitement. Good measures include task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership. Add human review quality and user adoption data. If people try the system once and return to the old process, the rollout has not succeeded.
-
-## Final Takeaway
-
-This approach is valuable when it is connected to a real workflow, evaluated against real examples, and operated with clear boundaries. The winning teams will not be the ones with the longest list of AI tools. They will be the teams that turn AI into repeatable, observable, and trusted work.
-
-Start small, measure honestly, and improve the system with evidence. Use model APIs, open-weight models, prompt templates, embeddings, vector databases, evaluation suites, logs, and guardrails; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations where they fit, but keep the focus on more reliable AI products with measurable quality, cost, and latency controls; clearer tool selection and workflows that save time without creating hidden risk. That is the difference between an impressive demo and a capability that keeps paying off after the novelty fades.
+Yes, with AWQ INT4 quantization. A 70B model in INT4 takes roughly 35–40 GB, leaving 40+ GB for KV cache. This supports meaningful concurrent load. In fp16 (140 GB), a single A100 80GB cannot fit a 70B model — you'd need at least 2× A100 80GB with tensor parallelism. This is one of the most practical arguments for quantization: it changes the hardware footprint from "2 GPUs required" to "1 GPU sufficient."

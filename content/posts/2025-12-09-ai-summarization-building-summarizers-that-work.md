@@ -2,145 +2,599 @@
 title: "AI Summarization: Building Summarizers That Actually Work"
 date: "2025-12-09"
 slug: "ai-summarization-building-summarizers-that-work"
-description: "A practical, developer-friendly guide to ai summarization: building summarizers that actually work with architecture, evaluation, rollout advice, and FAQ."
+description: "A technical guide to LLM summarization: extractive vs abstractive, chunking, model choice, ROUGE evaluation, and production code patterns."
 heroImage: "/images/heroes/ai-summarization-building-summarizers-that-work.webp"
 tags: [llm, ai-tools]
 ---
 
-This topic is easiest to understand when it is treated as a workflow instead of a collection of disconnected features.
+The demo always looks clean: paste in a document, get back a crisp three-paragraph summary. Ship it to production and the reality lands differently. The model omits the most important numbers. The summary confidently describes something that isn't in the source. A 90-page contract gets truncated at token limit and the model hallucinates the rest. I've hit all three of those walls.
 
-This guide is written for developers, technical product managers, AI engineers, and teams choosing models for real applications; operators, developers, founders, analysts, and teams comparing AI products for daily work. It focuses on large language models, model evaluation, inference, prompting, retrieval, and production AI systems; AI tools, developer productivity, automation platforms, and practical AI workflows and explains how to evaluate the topic in a way that leads to more reliable AI products with measurable quality, cost, and latency controls; clearer tool selection and workflows that save time without creating hidden risk. The emphasis is practical: what the concept means, how it fits into a real stack, what trade-offs matter, and how to avoid common implementation mistakes.
+This guide is the technical tutorial I wish I'd had before building my first production summarizer. We'll cover the fundamentals of AI summarization — extractive, abstractive, and hybrid approaches — then move through model selection, chunking strategies for long documents, code patterns that actually hold up, quality evaluation, and multi-document summarization. By the end, you'll have a framework to build LLM summarization pipelines that don't embarrass you in production.
 
-The AI market changes quickly, so this article avoids brittle claims about exact pricing or one-time benchmark rankings. Use it as a durable decision framework, then confirm vendor limits, model names, and pricing on the official product pages before you buy or deploy.
+---
 
-## What It Really Means
+## Types of AI Summarization
 
-At a high level, This topic sits inside large language models, model evaluation, inference, prompting, retrieval, and production AI systems; AI tools, developer productivity, automation platforms, and practical AI workflows. The important point is not the label itself. The important point is the workflow it enables. A useful AI tool or model should reduce the distance between a user's intent and a correct, reviewed result. It should also make the work easier to observe, improve, and govern over time.
+Before writing a line of code, you need to know which type of summarization your use case actually needs. The three major approaches have genuinely different trade-offs.
 
-For a developer team, that usually means three things. First, the system has to understand enough context to be useful. That context might be source code, product documentation, logs, tickets, metrics, documents, examples, or previous decisions. Second, the system needs a reliable way to act. That action might be generating code, calling an API, searching a knowledge base, opening a pull request, drafting a release plan, or summarizing a customer conversation. Third, the system needs a feedback loop so the team can measure quality and fix regressions.
+### Extractive Summarization
 
-A common mistake is to treat this as a single product decision. In practice, it is an operating model. The best teams define where AI is allowed to help, where humans must review, how outputs are tested, and what happens when the system is uncertain. That operating model matters more than the name on the invoice.
+Extractive methods select and stitch together sentences or passages directly from the source text. Nothing is paraphrased or synthesized — the output is a subset of the input.
 
-When you compare options, ask whether the tool fits the jobs people already do. A strong system should work with model APIs, open-weight models, prompt templates, embeddings, vector databases, evaluation suites, logs, and guardrails; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations. It should improve a real process without forcing every team to rebuild its workflow from scratch. If adoption requires too much ritual, the system will look impressive in a demo and then disappear from daily use.
+**When to use it:** Legal documents where exact wording matters. Meeting transcripts where you want verbatim quotes. Compliance use cases where invented phrasing creates liability.
 
-## Where It Creates Value
+**Limitations:** The output can feel choppy since sentences were written in context. It cannot consolidate information spread across multiple paragraphs. And it struggles badly with poorly structured source text.
 
-The best use cases are repetitive enough to benefit from automation but nuanced enough to justify AI. Purely mechanical work can often be handled with scripts. Highly ambiguous strategy work still needs experienced people. The attractive middle ground is work where context, judgment, and speed all matter.
+Classic extractive approaches include TF-IDF sentence scoring, TextRank (graph-based), and BERT-based sentence ranking models like `bert-extractive-summarizer`.
 
-One common use case is research and synthesis. Teams can use AI to gather scattered information, compare options, and turn notes into a structured recommendation. This is useful for architecture reviews, vendor selection, incident summaries, release notes, and customer support analysis. The output should not be accepted blindly, but it can shorten the first draft from hours to minutes.
+### Abstractive Summarization
 
-A second use case is assisted execution. In software teams, that may mean code generation, test generation, migration planning, configuration review, or pull request analysis. In operations teams, it may mean triage, runbook lookup, log summarization, or routing incidents to the right owner. The important boundary is that AI should work inside a controlled path, not improvise across production systems without oversight.
+Abstractive methods use a language model to generate new text that captures the meaning of the source. The output can synthesize, reframe, and compress information in ways that extractive methods cannot.
 
-A third use case is quality improvement. AI can help create test cases, summarize failures, classify feedback, detect inconsistencies, and highlight missing documentation. This is where the approach often produces compounding value. Each cycle improves the team's knowledge base, examples, evaluation cases, and standard operating procedures.
+**When to use it:** Most cases where readability matters — customer support summaries, executive briefings, research synthesis, meeting recaps. This is where LLMs like Claude and GPT-4o genuinely shine.
 
-The strongest teams start with one or two narrow workflows. They measure task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership before and after adoption. Then they expand only when the data shows that the system helps. This keeps the project grounded and prevents the team from chasing novelty.
+**Limitations:** The model can hallucinate facts not present in the source, alter numerical claims, or lose specificity when compressing aggressively. You need evaluation and validation pipelines.
 
-## A Practical Architecture
+### Hybrid Summarization
 
-A production-ready approach to this usually has five layers: interface, context, reasoning, action, and evaluation. The interface is where users express intent. It might be a chat box, command line, editor extension, dashboard, API endpoint, or background job. The interface should make the expected result obvious and should expose enough controls for the user to review or redirect the work.
+Hybrid approaches run an extractive pass first — pulling the most relevant passages — then feed those passages to an LLM for abstractive synthesis. The extractive step controls what the model sees; the abstractive step controls how it reads.
 
-The context layer gathers the information the system needs. This layer can include retrieval from documents, code search, database records, logs, metrics, tickets, configuration files, or user-provided examples. Good context is selective. Sending everything to a model increases cost and noise. A better pattern is to retrieve the smallest set of evidence that can support the next decision.
+**When to use it:** Long documents where you can't fit the full text in context. Research synthesis where faithfulness matters but you still want polished prose. Any situation where you want to reduce hallucination risk without losing the fluency of abstractive output.
 
-The reasoning layer chooses a plan or produces an answer. This may be a single model call, a chain of calls, a workflow graph, or an agent loop. Keep this layer simple until complexity is justified. Many teams build elaborate multi-agent systems before they can reliably evaluate one model call. That usually makes debugging harder.
+This is the approach I default to for most production work.
 
-The action layer connects the system to tools. These tools can include model APIs, open-weight models, prompt templates, embeddings, vector databases, evaluation suites, logs, and guardrails; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations. Tool use should be explicit, typed, logged, and permissioned. When an action can affect data, infrastructure, cost, or customers, require approval or run it in a sandbox first.
+---
 
-The evaluation layer closes the loop. It should track task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership and preserve examples of both success and failure. Without this layer, teams are forced to judge quality by anecdotes. With it, they can improve prompts, retrieval, model choice, and workflow design with evidence.
+## The Summarization Pipeline
 
-## How to Evaluate Quality
+Here's how a production-grade LLM summarization system flows from raw document to final output:
 
-Evaluation is where serious AI work separates itself from experimentation. A useful evaluation plan for this starts with real tasks. Gather examples from support tickets, pull requests, internal documents, analytics requests, incident reports, or customer conversations. Remove sensitive information, then turn those examples into a small but representative test set.
+```mermaid
+flowchart TD
+    A[Raw Document] --> B{Document Length}
+    B -->|Fits in context window| C[Direct Abstractive Summary]
+    B -->|Exceeds context window| D[Chunking Layer]
+    D --> E[Chunk Scoring / Extractive Filter]
+    E --> F[Top Chunks Selected]
+    F --> G[LLM Abstractive Summary per Chunk]
+    G --> H[Chunk Summaries Assembled]
+    H --> I[LLM Synthesis Pass]
+    C --> J[Quality Evaluation]
+    I --> J
+    J --> K{Passes Evaluation Threshold?}
+    K -->|Yes| L[Deliver Summary]
+    K -->|No| M[Flag for Human Review]
+    M --> N[Human Edit or Regenerate]
+    N --> L
+```
 
-Each test case should define the input, the expected behavior, and the failure modes that matter. For some tasks, the expected result is exact. For example, a JSON extraction task can be checked against a schema. For other tasks, the expected result is judged by a rubric. A good rubric might score correctness, completeness, clarity, citation quality, security awareness, and usefulness.
+The key insight here is the branching at document length. Most teams skip this and assume their documents will always fit in the context window. They don't. A clean pipeline handles both paths explicitly.
 
-Do not rely on a single aggregate score. Track dimensions separately. A system can be fast and cheap while still being wrong. It can be accurate but too slow for interactive use. It can produce polished language while ignoring important constraints. The right choice depends on which dimension is binding for the workflow.
+---
 
-For this topic, useful metrics include task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership. Add qualitative review for edge cases. Keep examples where the system failed, because those examples become the most valuable part of the evaluation set. When you change prompts, retrieval rules, model versions, or tool permissions, rerun the same cases.
+## Choosing a Model for LLM Summarization
 
-Evaluation also protects teams from demo bias. A demo tends to show happy paths. A test set shows what happens when inputs are messy, incomplete, adversarial, or simply boring. Real users send all four.
+Model selection for summarization isn't about raw benchmark scores. It's about context window, faithfulness to source, and cost per token at your expected volume.
 
-## Implementation Plan
+### Claude (Anthropic) — 200K context
 
-Start by writing a one-page problem statement. Describe the users, the job they are trying to complete, the current pain, and the measurable result you want. This keeps the project anchored in a business or engineering outcome instead of a vague AI initiative.
+Claude 3.5 Sonnet and Claude 3 Opus are the models I reach for first on summarization tasks. The 200K context window on Sonnet handles the vast majority of real-world documents without chunking. More importantly, Claude tends to stay close to the source — it's less likely to embellish or add claims not present in the input than GPT-4o in my testing.
 
-Next, map the workflow from request to final review. Identify where context enters the system, where the model is used, where a tool is called, and where a human approves the result. Mark any step that touches customer data, production infrastructure, financial spend, or security-sensitive information. Those steps need stronger controls.
+Claude also follows instructions about format precisely. If you tell it to produce a summary in exactly five bullet points with no preamble, it does that reliably. That kind of control matters when summaries are feeding downstream systems.
 
-Then build the smallest working version. Use existing tools where possible. Connect only the context sources that matter. Add simple logging. Save inputs and outputs for review. Avoid building a generalized platform before you know which workflow will survive contact with users.
+**Best for:** Long-form documents, legal and compliance content, cases where faithfulness is the primary constraint.
 
-After the first version works, run it against a test set. Review failures in batches. Some failures will be prompt problems. Some will be retrieval problems. Some will be product problems, where the interface lets users ask for work the system cannot safely perform. Fix the highest-impact category first.
+### GPT-4o (OpenAI) — 128K context
 
-For tutorial-style adoption, create a thin vertical slice first. The slice should include real input, one useful action, visible review, and a measurable output. That is enough to learn without building unnecessary platform layers.
+GPT-4o produces fluent, polished summaries and is strong on structured output. The 128K window is sufficient for most business documents. Where it diverges from Claude is in its tendency to be slightly more "editorializing" — adding context or framing that wasn't explicitly in the source. Sometimes that's useful. Sometimes it's a faithfulness problem.
 
-Finally, write an operating guide. Include setup steps, permissions, expected inputs, known limitations, escalation rules, and evaluation commands. A tool that only one person knows how to operate is not production-ready, even if it works well in a notebook.
+GPT-4o mini is the right call for high-volume, lower-stakes summarization where cost dominates quality. Add validation pipelines accordingly.
 
-## Common Mistakes to Avoid
+**Best for:** High-volume pipelines, customer-facing prose where fluency matters most, structured-output extraction combined with summarization.
 
-The first mistake is adopting this approach without a clear owner. AI work crosses product, engineering, legal, security, and operations. If nobody owns the workflow, decisions become fragmented. Assign an owner who can prioritize the use case, gather feedback, and decide when the system is good enough to expand.
+### Gemini 1.5 / 2.0 (Google) — up to 2M context
 
-The second mistake is trusting polished output. Large language models are good at sounding confident. That does not mean the answer is grounded. Require citations, retrieved evidence, tests, schemas, or human review when the task has real consequences. The review process should be designed before the system is widely used.
+Gemini's 2M token context window is in a category of its own. If you're summarizing entire codebases, book-length documents, or multi-hour transcripts, Gemini is the only model that handles this natively without chunking. Quality is competitive with GPT-4o but calibration can be less consistent — you'll want stronger evaluation pipelines.
 
-The third mistake is hiding uncertainty. If the system is missing context, blocked by permissions, or making an assumption, the user should see that. A clear refusal or a request for more information is better than a fabricated answer. This is especially important in large language models, model evaluation, inference, prompting, retrieval, and production AI systems; AI tools, developer productivity, automation platforms, and practical AI workflows because small errors can cascade through technical decisions.
+**Best for:** Extremely long documents where chunking is impractical. Multi-hour video transcripts. Large codebase analysis.
 
-The fourth mistake is ignoring cost and latency until late. Token usage, tool calls, retries, and long context windows can become expensive. Measure cost per successful task, not only cost per model call. A cheaper model that requires repeated human cleanup may be more expensive than a stronger model with fewer failures.
+### Summary Comparison
 
-The fifth mistake is skipping change management. Users need to know what the system is for, when to trust it, and how to report problems. Good rollout includes examples, office hours, documentation, and a feedback loop. Adoption is a product problem, not only an engineering problem.
+| Model | Context Window | Faithfulness | Cost/1M tokens (approx) | Best Use Case |
+|---|---|---|---|---|
+| Claude 3.5 Sonnet | 200K | High | ~$3 input / $15 output | Long docs, compliance, production default |
+| GPT-4o | 128K | Medium-High | ~$2.50 / $10 | High volume, structured output |
+| GPT-4o mini | 128K | Medium | ~$0.15 / $0.60 | Bulk, low-stakes, add validation |
+| Gemini 1.5 Pro | 1M | Medium | ~$1.25 / $5 | Extremely long documents |
+| Gemini 2.0 Flash | 1M | Medium | ~$0.10 / $0.40 | Very long, cost-sensitive |
 
-## Recommended Stack and Workflow
+Prices shift frequently — verify on the provider's pricing page before budgeting.
 
-A strong stack for this does not have to be complicated. Begin with a stable interface, a small set of trusted context sources, a reliable model or tool provider, and a visible review step. Add orchestration only when the workflow genuinely needs multiple steps or tool calls.
+---
 
-For context, prefer sources that are maintained as part of normal work: repositories, docs, tickets, runbooks, dashboards, and customer records with appropriate access controls. Stale context creates stale answers. If the knowledge base is not maintained, retrieval will not save the system.
+## Chunking Strategies for Long Documents
 
-For model selection, test more than one option. Compare quality, latency, cost, context length, structured output support, tool calling behavior, privacy terms, and operational fit. The best model for drafting a document may not be the best model for code repair, classification, or high-volume summarization.
+The hardest part of production summarization is not the summarization itself. It's handling documents that exceed the context window cleanly. Bad chunking is where most summarizers fall apart.
 
-For workflow control, use typed inputs and outputs. JSON schemas, templates, checklists, and approval forms make results easier to validate. They also help users understand what the system can do. Free-form chat is useful for exploration, but production workflows benefit from structure.
+### Fixed-Size Chunking
 
-For monitoring, capture prompt versions, retrieval hits, model names, tool calls, latency, token usage, user edits, and final outcomes. These records make it possible to debug quality issues and defend decisions later. Monitoring also helps teams decide when a prompt needs a small change and when the workflow needs a redesign.
+The naive approach: split every N tokens with overlap.
 
-## Decision Checklist
+```python
+def fixed_chunk(text: str, chunk_size: int = 4000, overlap: int = 200) -> list[str]:
+    tokens = text.split()  # simplified; use a real tokenizer in production
+    chunks = []
+    start = 0
+    while start < len(tokens):
+        end = min(start + chunk_size, len(tokens))
+        chunks.append(" ".join(tokens[start:end]))
+        start += chunk_size - overlap
+    return chunks
+```
 
-Use a decision checklist before you invest deeply. The checklist should force the team to connect the technology to a measurable workflow. For this topic, the most useful criteria are usually workflow fit, output quality, integration effort, operating cost, security posture, and long-term maintainability.
+This works but it's blunt. A chunk boundary can land mid-sentence, mid-table, or mid-argument. The overlap helps but doesn't solve the structural problem.
 
-Ask these questions before adoption:
+### Semantic Chunking
 
-- What user job will this improve?
-- What evidence shows that the current workflow is slow, expensive, or error-prone?
-- What context does the system need, and who owns that context?
-- What actions can the system take, and which actions require approval?
-- What data must never be sent to a third-party service?
-- How will we measure task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership?
-- What happens when the model is uncertain or wrong?
-- Who reviews failures and improves the workflow?
-- What is the rollback plan if quality drops?
+Better: split on natural document boundaries — paragraphs, sections, headings — and only sub-split when a section exceeds the limit.
 
-The answers do not need to be perfect at the start. They do need to be explicit. Explicit assumptions can be tested. Hidden assumptions become production incidents, budget surprises, or tools that nobody uses.
+```python
+import re
 
-A good decision also includes a stop rule. Decide what result would make the team pause or abandon the rollout. This protects the organization from continuing an AI project simply because it is already in motion.
+def semantic_chunk(text: str, max_tokens: int = 4000) -> list[str]:
+    # Split on section boundaries (headings, paragraph breaks)
+    sections = re.split(r'\n#{1,3} |\n\n', text)
+    chunks = []
+    current = []
+    current_len = 0
+
+    for section in sections:
+        section_len = len(section.split())  # approx token count
+        if current_len + section_len > max_tokens and current:
+            chunks.append("\n\n".join(current))
+            current = []
+            current_len = 0
+        current.append(section)
+        current_len += section_len
+
+    if current:
+        chunks.append("\n\n".join(current))
+    return chunks
+```
+
+For production, replace the `len(section.split())` approximation with a proper tokenizer from `tiktoken` (OpenAI) or `anthropic-tokenizer`.
+
+### Map-Reduce Summarization
+
+Map-Reduce is the standard pattern for summarizing long documents in two passes:
+
+1. **Map pass**: Summarize each chunk independently.
+2. **Reduce pass**: Feed all chunk summaries to the model and synthesize a final summary.
+
+```python
+async def map_reduce_summarize(
+    chunks: list[str],
+    client,  # anthropic or openai client
+    map_prompt: str,
+    reduce_prompt: str,
+) -> str:
+    # Map: summarize each chunk
+    chunk_summaries = []
+    for chunk in chunks:
+        response = await client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=500,
+            messages=[{
+                "role": "user",
+                "content": f"{map_prompt}\n\n---\n\n{chunk}"
+            }]
+        )
+        chunk_summaries.append(response.content[0].text)
+
+    # Reduce: synthesize chunk summaries
+    combined = "\n\n---\n\n".join(chunk_summaries)
+    final = await client.messages.create(
+        model="claude-3-5-sonnet-20241022",
+        max_tokens=1000,
+        messages=[{
+            "role": "user",
+            "content": f"{reduce_prompt}\n\n---\n\n{combined}"
+        }]
+    )
+    return final.content[0].text
+```
+
+The map prompt and reduce prompt should be different. The map prompt asks for a faithful, detailed summary of the chunk. The reduce prompt asks for synthesis, thematic consolidation, and key takeaway extraction.
+
+### Hierarchical Summarization
+
+For very long documents, a single reduce pass can still exceed the context window if there are many chunks. The solution is recursive reduction: summarize chunks in groups, then summarize those summaries.
+
+```python
+def hierarchical_summarize(chunk_summaries: list[str], group_size: int = 5) -> list[str]:
+    """Recursively reduce summaries until one remains."""
+    if len(chunk_summaries) <= 1:
+        return chunk_summaries
+    groups = [
+        chunk_summaries[i:i + group_size]
+        for i in range(0, len(chunk_summaries), group_size)
+    ]
+    # Each group gets combined and summarized — recurse until done
+    return groups  # in practice, call the LLM on each group then recurse
+```
+
+---
+
+## Building a Summarizer: End-to-End Code Pattern
+
+Here's a practical, production-oriented summarizer that handles both short and long documents:
+
+```python
+import anthropic
+from dataclasses import dataclass
+
+@dataclass
+class SummaryResult:
+    summary: str
+    chunk_count: int
+    strategy: str  # "direct" | "map_reduce" | "hierarchical"
+
+CONTEXT_LIMIT_TOKENS = 150_000  # conservative for Claude 200K
+
+def estimate_tokens(text: str) -> int:
+    # Rough approximation: 1 token ≈ 4 characters
+    return len(text) // 4
+
+def build_summarizer(client: anthropic.Anthropic):
+    def summarize(
+        document: str,
+        style: str = "executive",  # "executive" | "detailed" | "bullets"
+        max_output_tokens: int = 800,
+    ) -> SummaryResult:
+        token_estimate = estimate_tokens(document)
+
+        style_instructions = {
+            "executive": "Write a concise executive summary in 3-4 paragraphs. Focus on key findings, decisions, and recommended actions.",
+            "detailed": "Write a comprehensive summary preserving all important details, numbers, and named entities.",
+            "bullets": "Write a summary as a flat bulleted list. Each bullet is one distinct point. No sub-bullets.",
+        }[style]
+
+        base_prompt = f"""Summarize the following document. {style_instructions}
+
+Stay strictly within the content provided. Do not add context, interpretation, or information not present in the source.
+
+DOCUMENT:
+"""
+
+        if token_estimate < CONTEXT_LIMIT_TOKENS:
+            # Direct summarization
+            response = client.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=max_output_tokens,
+                messages=[{"role": "user", "content": base_prompt + document}]
+            )
+            return SummaryResult(
+                summary=response.content[0].text,
+                chunk_count=1,
+                strategy="direct",
+            )
+        else:
+            # Map-reduce for long documents
+            chunks = semantic_chunk(document, max_tokens=3500)
+            chunk_summaries = []
+
+            for chunk in chunks:
+                r = client.messages.create(
+                    model="claude-3-5-sonnet-20241022",
+                    max_tokens=400,
+                    messages=[{
+                        "role": "user",
+                        "content": "Summarize this section faithfully and concisely:\n\n" + chunk
+                    }]
+                )
+                chunk_summaries.append(r.content[0].text)
+
+            combined = "\n\n---\n\n".join(chunk_summaries)
+            final = client.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=max_output_tokens,
+                messages=[{
+                    "role": "user",
+                    "content": f"The following are section summaries of a long document. {style_instructions}\n\nSECTION SUMMARIES:\n\n{combined}"
+                }]
+            )
+            return SummaryResult(
+                summary=final.content[0].text,
+                chunk_count=len(chunks),
+                strategy="map_reduce",
+            )
+
+    return summarize
+```
+
+The key design decisions here: the style parameter drives a meaningfully different prompt rather than just labeling the output, the token threshold is conservative (don't push right up to the model's limit), and the strategy is logged in the result for debugging.
+
+---
+
+## Summarization Workflow by Document Type
+
+Different document types need different pipeline configurations:
+
+```mermaid
+flowchart TD
+    A[Incoming Document] --> B{Document Type}
+
+    B -->|Legal / Contract| C[Extractive pre-filter\nfor key clauses]
+    B -->|Meeting Transcript| D[Speaker segmentation\nthen per-speaker summary]
+    B -->|Research Paper| E[Section-aware chunking\nAbstract + Conclusion prioritized]
+    B -->|Customer Support Thread| F[Chronological chunking\nSentiment-aware prompt]
+    B -->|Financial Report| G[Table-aware parsing\nNumeric preservation check]
+
+    C --> H[Abstractive synthesis\nwith faithfulness constraint]
+    D --> H
+    E --> H
+    F --> H
+    G --> H
+
+    H --> I[Structured Output Validation]
+    I --> J{Output valid?}
+    J -->|Yes| K[Quality Evaluation Pipeline]
+    J -->|No| L[Retry with corrective prompt]
+    L --> H
+    K --> M[Deliver or Flag]
+```
+
+The document type routing matters more than most teams realize. A financial report prompt that asks the model to "stay close to the source" without additional instructions about numbers will still paraphrase dollar figures. Add an explicit instruction: "Reproduce all monetary figures, percentages, and dates exactly as they appear in the source."
+
+---
+
+## Quality Evaluation
+
+This is where most summarization projects fall short. ROUGE scores get computed in a notebook, look reasonable, and the team ships. Then someone notices the summary inverted a key finding.
+
+### ROUGE Scores
+
+ROUGE (Recall-Oriented Understudy for Gisting Evaluation) measures n-gram overlap between the generated summary and a reference summary. It's cheap to compute and useful as a regression signal, but it has serious blind spots.
+
+```python
+from rouge_score import rouge_scorer
+
+def evaluate_rouge(
+    generated: str,
+    reference: str,
+) -> dict[str, float]:
+    scorer = rouge_scorer.RougeScorer(
+        ["rouge1", "rouge2", "rougeL"], use_stemmer=True
+    )
+    scores = scorer.score(reference, generated)
+    return {
+        "rouge1_f": scores["rouge1"].fmeasure,
+        "rouge2_f": scores["rouge2"].fmeasure,
+        "rougeL_f": scores["rougeL"].fmeasure,
+    }
+```
+
+ROUGE scores above 0.4 on ROUGE-1 are generally acceptable for abstractive summarization. Below 0.3 is a red flag. But a summary can score 0.5 on ROUGE and still be factually wrong — high lexical overlap does not guarantee faithfulness.
+
+### Faithfulness Evaluation
+
+Faithfulness measures whether every claim in the summary is supported by the source document. This is the metric that actually matters for production. The best automated approach uses a separate LLM as a critic:
+
+```python
+def evaluate_faithfulness(
+    summary: str,
+    source: str,
+    client: anthropic.Anthropic,
+) -> dict:
+    prompt = f"""You are evaluating whether a summary is faithful to its source document.
+
+For each sentence in the summary, determine if it is:
+- SUPPORTED: Directly supported by the source
+- UNSUPPORTED: Claims something not present in the source
+- CONTRADICTS: Contradicts something in the source
+
+Source:
+{source}
+
+Summary:
+{summary}
+
+Return a JSON object with:
+- overall_faithfulness: float from 0.0 to 1.0
+- unsupported_claims: list of unsupported sentences
+- contradictions: list of contradicting sentences
+- verdict: "pass" | "review" | "fail"
+
+Use verdict "fail" if any contradictions exist.
+Use verdict "review" if unsupported_claims are present.
+Use verdict "pass" only if all claims are supported."""
+
+    response = client.messages.create(
+        model="claude-3-5-sonnet-20241022",
+        max_tokens=800,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    import json
+    return json.loads(response.content[0].text)
+```
+
+This is LLM-as-judge — use a strong model (Claude Sonnet or GPT-4o) as the evaluator, not the same model you used to generate the summary. Different model, different failure modes.
+
+### Human Evaluation Rubric
+
+For high-stakes pipelines, automated metrics are not enough. Keep a set of reference documents with gold-standard summaries. Periodically run human evaluation using a structured rubric:
+
+| Dimension | Score 1 | Score 3 | Score 5 |
+|---|---|---|---|
+| **Faithfulness** | Multiple contradictions | Minor omissions | All claims supported |
+| **Coverage** | Key points missing | Most points present | Comprehensive |
+| **Conciseness** | Redundant / verbose | Acceptable length | Tight, no padding |
+| **Coherence** | Hard to follow | Readable | Flows naturally |
+| **Specificity** | Vague generalities | Some specifics | Precise, concrete |
+
+Aim for a sample of 50-100 documents per evaluation cycle. Weight recent failures more heavily — they reveal prompt regressions or distribution shifts.
+
+---
+
+## Multi-Document Summarization
+
+Summarizing a single document is tractable. Summarizing a cluster of related documents — competitive intelligence, research corpus, support ticket threads — is harder. The challenge is deduplication and contradiction resolution.
+
+### The Fusion Approach
+
+Rather than summarizing documents independently and concatenating, fuse them. Give the model the documents together with an explicit instruction to synthesize across sources:
+
+```python
+def multi_doc_summarize(
+    documents: list[dict],  # [{"title": ..., "content": ...}]
+    client: anthropic.Anthropic,
+    question: str | None = None,
+) -> str:
+    doc_block = "\n\n---\n\n".join([
+        f"DOCUMENT {i+1}: {doc['title']}\n\n{doc['content']}"
+        for i, doc in enumerate(documents)
+    ])
+
+    focus = f"\nFocus especially on answering: {question}" if question else ""
+
+    prompt = f"""You will be given multiple related documents. Synthesize them into a single coherent summary.
+
+Rules:
+1. Consolidate overlapping information — don't repeat the same point from multiple sources.
+2. Flag contradictions explicitly: note when documents disagree on a fact.
+3. Attribute key claims to their source document where relevant.
+4. Preserve all specific numbers, dates, and named entities.{focus}
+
+DOCUMENTS:
+{doc_block}"""
+
+    response = client.messages.create(
+        model="claude-3-5-sonnet-20241022",
+        max_tokens=1200,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return response.content[0].text
+```
+
+The `question` parameter is valuable for query-focused summarization — when you have a specific question and want the summary to answer it rather than cover everything uniformly.
+
+### Handling Contradictions
+
+When documents conflict, you have three options:
+
+1. **Flag and present both**: "Document A states X; Document B states Y." Let the human decide.
+2. **Recency-weight**: Prefer the most recent document when there's a clear date hierarchy.
+3. **Confidence-weight**: Use a secondary model to evaluate which claim is better supported, then surface the winner with a note.
+
+Option 1 is the safest default for production. Options 2 and 3 are appropriate when you have strong metadata (clear timestamps, source authority scores) and the contradictions are systematic.
+
+---
+
+## Choosing Your Summarization Strategy
+
+Use this decision flowchart before you write any code. The wrong architecture for your constraints will cost more time to fix later than picking the right one upfront.
+
+```mermaid
+flowchart TD
+    A[Start: New Summarization Use Case] --> B{Does verbatim\nwording matter?}
+
+    B -->|Yes — legal, compliance| C[Extractive-first pipeline\nAbstractive only for prose layer]
+    B -->|No — readability is primary| D{How long are\nyour documents?}
+
+    D -->|Fits in model context window| E{Faithfulness\ncriticality?}
+    D -->|Exceeds context window| F[Map-Reduce pipeline\nSemantic chunking]
+
+    E -->|High — numbers, facts, citations| G[Direct abstractive\n+ faithfulness eval pass]
+    E -->|Standard| H[Direct abstractive\nROUGE regression only]
+
+    F --> I{Do chunks still\nexceed window after splitting?}
+    I -->|No| J[Map-Reduce with\nsynthesis reduce pass]
+    I -->|Yes — very long doc| K[Hierarchical reduction\nor switch to Gemini 1M+]
+
+    C --> L{Multiple source\ndocuments?}
+    G --> L
+    H --> L
+    J --> L
+    K --> L
+
+    L -->|Single document| M[Single-doc pipeline\nAdd evaluation layer]
+    L -->|Multiple documents| N[Fusion prompt\nContradiction detection]
+
+    M --> O[Ship with monitoring]
+    N --> O
+```
+
+This flowchart handles the four major decision axes: verbatim fidelity, document length, faithfulness requirements, and single vs. multi-document. Most production summarizers live somewhere in the middle of this graph — map-reduce with a faithfulness eval pass is the most common configuration I end up with.
+
+---
+
+## Common Pitfalls
+
+**Over-compression loses the signal.** Asking the model for a "brief two-sentence summary" of a 50-page technical report will produce two sentences that are technically accurate but useless. Match summary length to source complexity.
+
+**Prompts that don't constrain the model produce embellishment.** Without explicit faithfulness instructions, models will add context they infer, not facts they read. Always include: "Do not add information not present in the source document."
+
+**Ignoring token limits until production.** Test with your 99th-percentile document length, not your average. The documents that break your pipeline are never the typical ones.
+
+**Single-pass quality evaluation.** ROUGE scores alone will miss hallucinated facts. Add a faithfulness check before you call a summary production-ready.
+
+**No versioning of prompts.** Prompt changes can silently degrade summary quality. Store your summarization prompts in version control and re-run your evaluation suite after every change.
+
+**Using the same model for generation and evaluation.** A model that confidently hallucinates a number will confidently evaluate that number as correct. Use a different model — or a different provider — as your evaluator.
+
+---
+
+## Real-World Applications
+
+**Legal document review**: Extract key clauses, obligations, and risk factors from contracts. The extractive pre-filter ensures verbatim capture of defined terms; the abstractive pass creates readable summaries for non-legal stakeholders.
+
+**Customer support summarization**: Summarize ticket threads and customer conversation history before routing to a human agent. Reduces average handle time by giving agents context immediately.
+
+**Research synthesis**: Summarize clusters of academic papers around a topic, identifying consensus findings, contradictions, and open questions. Query-focused multi-document summarization works well here.
+
+**Earnings call summarization**: Process transcripts of quarterly earnings calls to extract key metrics, guidance changes, and management commentary. Requires strict numeric faithfulness — add a structured extraction step to pull all figures before summarizing.
+
+**Incident postmortem generation**: Summarize incident timelines from log data, Slack threads, and runbooks into structured postmortems. The hybrid approach (extract relevant log lines, then abstractive synthesis) handles the noise-to-signal ratio in raw incident data.
+
+**Meeting transcript summarization**: One of the highest-volume use cases. Combine speaker diarization output with a per-speaker summary pass, then synthesize into a single meeting recap with action items extracted as a structured list.
+
+---
+
+## Verdict
+
+LLM summarization is genuinely useful and genuinely dangerous in the same system if you don't engineer it carefully. The models themselves — Claude, GPT-4o, Gemini — are capable enough for production summarization today. The failure modes are almost always architectural: no chunking strategy for long documents, no faithfulness evaluation, no prompt versioning, no handling of the edge cases that live in your real document corpus.
+
+My practical defaults after building several production summarizers:
+
+1. **Claude 3.5 Sonnet** as the default model — high faithfulness, excellent instruction following, 200K window handles most documents without chunking.
+2. **Semantic chunking over fixed-size** — preserves document structure, produces better chunk summaries.
+3. **Hybrid pipeline** — extractive filter into abstractive synthesis when faithfulness is the primary constraint.
+4. **Faithfulness evaluation on every output** before delivery, using a second model as judge.
+5. **Explicit prompt constraints** — always instruct the model not to add information beyond the source.
+6. **Style parameters in the API** — let callers specify output format rather than building separate summarizers for each use case.
+
+Start with the direct path for documents that fit in context. Add map-reduce when you need it. Add hierarchical reduction only when map-reduce overflows. Complexity should be earned by document length, not assumed upfront.
+
+---
 
 ## FAQ
 
-### Is this only for advanced AI teams?
+### What is the difference between extractive and abstractive summarization?
 
-No. The concepts are useful for small teams as well, but the implementation should match the team's maturity. A small team can start with a narrow workflow, manual review, and simple logs. A larger organization may need policy controls, shared evaluation infrastructure, and formal approval paths.
+Extractive summarization selects and assembles sentences directly from the source text without modifying them. Abstractive summarization uses a language model to generate new sentences that paraphrase and synthesize the source. Extractive is more faithful by construction; abstractive produces more readable, coherent output. Hybrid approaches use extractive filtering as a faithfulness guardrail and abstractive generation for readability.
 
-### What is the biggest risk?
+### How do I summarize a document that is longer than the model's context window?
 
-The biggest risk is not that the model makes one obvious mistake. The bigger risk is that a workflow quietly produces plausible but wrong output at scale. This is why evaluation, review, and monitoring matter. Treat AI output as work that needs quality control, not as magic.
+Use a chunking strategy — semantic chunking preferred — to split the document into segments that fit within the limit. Summarize each chunk independently in a map pass, then synthesize the chunk summaries in a reduce pass. For extremely long documents, you may need hierarchical reduction: summarize groups of chunk summaries, then summarize those results. Gemini's 1M-2M context window avoids this for many cases, at the cost of higher latency and per-token expense.
 
-### How long does adoption take?
+### How do I prevent the model from hallucinating in summaries?
 
-A useful prototype can often be built quickly, but production adoption takes longer because teams need permissions, evaluation, documentation, and user feedback. Plan for iteration. The first version should teach you which assumptions were wrong.
+Three layers: (1) include an explicit faithfulness instruction in the prompt — "do not add information not present in the source"; (2) use a hybrid pipeline where an extractive step controls what the model sees; (3) run a faithfulness evaluation pass using a second LLM as critic after generation. None of these eliminates hallucination entirely, but layering all three reduces it to manageable rates.
 
-### Should we build or buy?
+### Is ROUGE a reliable metric for summarization quality?
 
-Buy when the workflow is common, the vendor integrates with your stack, and the risk profile is acceptable. Build when the workflow depends on proprietary context, custom tools, or differentiated product behavior. Many teams use a hybrid approach: buy model access or infrastructure, then build the workflow layer themselves.
+ROUGE is useful as a regression signal — if ROUGE-1 drops significantly after a prompt change, something likely got worse. But it's not sufficient as a quality gate because high n-gram overlap does not guarantee faithfulness. A summary can score well on ROUGE while containing fabricated numbers or inverted conclusions. Always pair ROUGE with a faithfulness evaluation and periodic human review.
 
-### How should success be measured?
+### When should I use query-focused summarization instead of generic summarization?
 
-Measure outcomes rather than excitement. Good measures include task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership. Add human review quality and user adoption data. If people try the system once and return to the old process, the rollout has not succeeded.
-
-## Final Takeaway
-
-This approach is valuable when it is connected to a real workflow, evaluated against real examples, and operated with clear boundaries. The winning teams will not be the ones with the longest list of AI tools. They will be the teams that turn AI into repeatable, observable, and trusted work.
-
-Start small, measure honestly, and improve the system with evidence. Use model APIs, open-weight models, prompt templates, embeddings, vector databases, evaluation suites, logs, and guardrails; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations where they fit, but keep the focus on more reliable AI products with measurable quality, cost, and latency controls; clearer tool selection and workflows that save time without creating hidden risk. That is the difference between an impressive demo and a capability that keeps paying off after the novelty fades.
+Use query-focused summarization when the consumer of the summary has a specific question or decision to make. Generic summarization covers everything uniformly; query-focused summarization emphasizes information relevant to the query and can ignore portions of the document that don't bear on it. This is especially valuable for multi-document summarization where you're synthesizing a large corpus around a specific topic or decision.

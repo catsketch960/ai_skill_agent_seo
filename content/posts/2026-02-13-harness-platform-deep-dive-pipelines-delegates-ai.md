@@ -2,145 +2,382 @@
 title: "Harness Platform Deep Dive: Pipelines, Delegates, and AI Insights"
 date: "2026-02-13"
 slug: "harness-platform-deep-dive-pipelines-delegates-ai"
-description: "A practical, developer-friendly guide to harness platform deep dive: pipelines, delegates, and ai insights with architecture, evaluation, rollout advice, a..."
+description: "A technical deep-dive into the Harness platform: pipelines, delegates, connectors, YAML structure, and AI-powered features explained with real examples."
 heroImage: "/images/heroes/harness-platform-deep-dive-pipelines-delegates-ai.webp"
 tags: [harness, ai-tools]
 ---
 
-This topic is a practical topic for teams that want AI to create durable value instead of short demos.
+I have been running software delivery pipelines on Harness for the past two years across teams ranging from five engineers to several hundred. Over that time I have watched the platform grow from a smart CI/CD layer into something that feels much closer to a complete delivery operating system. If you are evaluating Harness, already using it and trying to extract more value, or just curious what the architecture actually looks like under the hood, this is the deep-dive I wish I had found before starting.
 
-This guide is written for DevOps teams, platform engineers, engineering managers, and developers who ship production software; operators, developers, founders, analysts, and teams comparing AI products for daily work. It focuses on software delivery, CI/CD automation, release governance, and cloud cost control; AI tools, developer productivity, automation platforms, and practical AI workflows and explains how to evaluate the topic in a way that leads to faster releases with lower operational risk; clearer tool selection and workflows that save time without creating hidden risk. The emphasis is practical: what the concept means, how it fits into a real stack, what trade-offs matter, and how to avoid common implementation mistakes.
+This article covers the Harness control plane and its relationship to delegates, walks through real pipeline YAML, explains how connectors and integrations tie the system together, and closes with a look at the AI features that have started showing up in production-worthy form.
 
-The AI market changes quickly, so this article avoids brittle claims about exact pricing or one-time benchmark rankings. Use it as a durable decision framework, then confirm vendor limits, model names, and pricing on the official product pages before you buy or deploy.
+## Platform Architecture: How Harness Is Actually Structured
 
-## What It Really Means
+Harness runs as a SaaS control plane. You never manage the orchestration infrastructure yourself — Harness operates that. What you do manage is the agent layer that runs inside your own network: the delegate.
 
-At a high level, This topic sits inside software delivery, CI/CD automation, release governance, and cloud cost control; AI tools, developer productivity, automation platforms, and practical AI workflows. The important point is not the label itself. The important point is the workflow it enables. A useful AI tool or model should reduce the distance between a user's intent and a correct, reviewed result. It should also make the work easier to observe, improve, and govern over time.
+That split is the most important thing to understand before you touch a single pipeline. It shapes security, networking, connectivity, troubleshooting, and scaling decisions. The control plane holds your pipeline definitions, triggers, secrets references, audit logs, and governance policies. The delegate holds credentials, executes build steps, reaches your Kubernetes clusters, and talks to your artifact registries.
 
-For a developer team, that usually means three things. First, the system has to understand enough context to be useful. That context might be source code, product documentation, logs, tickets, metrics, documents, examples, or previous decisions. Second, the system needs a reliable way to act. That action might be generating code, calling an API, searching a knowledge base, opening a pull request, drafting a release plan, or summarizing a customer conversation. Third, the system needs a feedback loop so the team can measure quality and fix regressions.
+```mermaid
+graph TD
+    CP[Harness Control Plane<br/>SaaS — managed by Harness]
+    CP --> PA[Pipeline Engine]
+    CP --> SM[Secrets Manager Integration]
+    CP --> PL[Policy Engine OPA]
+    CP --> AI[AI Development Assistant]
 
-A common mistake is to treat this as a single product decision. In practice, it is an operating model. The best teams define where AI is allowed to help, where humans must review, how outputs are tested, and what happens when the system is uncertain. That operating model matters more than the name on the invoice.
+    subgraph Your Network
+        D1[Delegate — prod cluster]
+        D2[Delegate — staging cluster]
+        D3[Delegate — build farm]
+    end
 
-When you compare options, ask whether the tool fits the jobs people already do. A strong system should work with pipelines, source control, build runners, deployment targets, observability tools, feature flags, policy checks, and incident workflows; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations. It should improve a real process without forcing every team to rebuild its workflow from scratch. If adoption requires too much ritual, the system will look impressive in a demo and then disappear from daily use.
+    subgraph Connectors
+        C1[GitHub / GitLab]
+        C2[Docker Hub / ECR / GAR]
+        C3[Kubernetes Clusters]
+        C4[Cloud Accounts AWS / GCP / Azure]
+        C5[Jira / ServiceNow]
+    end
 
-## Where It Creates Value
+    CP -->|HTTPS task queue| D1
+    CP -->|HTTPS task queue| D2
+    CP -->|HTTPS task queue| D3
+    D1 --> C3
+    D3 --> C1
+    D3 --> C2
+    D1 --> C4
+```
 
-The best use cases are repetitive enough to benefit from automation but nuanced enough to justify AI. Purely mechanical work can often be handled with scripts. Highly ambiguous strategy work still needs experienced people. The attractive middle ground is work where context, judgment, and speed all matter.
+The control plane never opens an inbound connection to your network. Delegates poll the task queue over outbound HTTPS on port 443. That design means you do not need to open firewall holes or expose internal services to the internet — a point that usually ends the security team's objections faster than anything else.
 
-One common use case is research and synthesis. Teams can use AI to gather scattered information, compare options, and turn notes into a structured recommendation. This is useful for architecture reviews, vendor selection, incident summaries, release notes, and customer support analysis. The output should not be accepted blindly, but it can shorten the first draft from hours to minutes.
+## Pipelines Deep Dive: YAML, Stages, Steps, and Templates
 
-A second use case is assisted execution. In software teams, that may mean code generation, test generation, migration planning, configuration review, or pull request analysis. In operations teams, it may mean triage, runbook lookup, log summarization, or routing incidents to the right owner. The important boundary is that AI should work inside a controlled path, not improvise across production systems without oversight.
+A Harness pipeline is defined in YAML. The platform provides a visual editor, but every click in the UI maps to a YAML mutation, and the raw YAML is always accessible. I recommend treating the YAML as the source of truth from day one and storing it in your repository alongside application code.
 
-A third use case is quality improvement. AI can help create test cases, summarize failures, classify feedback, detect inconsistencies, and highlight missing documentation. This is where the approach often produces compounding value. Each cycle improves the team's knowledge base, examples, evaluation cases, and standard operating procedures.
+Here is a realistic Continuous Integration pipeline for a Node.js service:
 
-The strongest teams start with one or two narrow workflows. They measure deployment frequency, lead time, failed deployment rate, rollback time, build duration, and cloud spend variance; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership before and after adoption. Then they expand only when the data shows that the system helps. This keeps the project grounded and prevents the team from chasing novelty.
+```yaml
+pipeline:
+  name: node-service-ci
+  identifier: node_service_ci
+  projectIdentifier: platform_engineering
+  orgIdentifier: acme
+  tags: {}
+  stages:
+    - stage:
+        name: Build and Test
+        identifier: build_and_test
+        type: CI
+        spec:
+          cloneCodebase: true
+          infrastructure:
+            type: KubernetesDirect
+            spec:
+              connectorRef: prod_k8s_connector
+              namespace: harness-builds
+              automountServiceAccountToken: true
+          execution:
+            steps:
+              - step:
+                  type: Run
+                  name: Install Dependencies
+                  identifier: install_deps
+                  spec:
+                    connectorRef: dockerhub_connector
+                    image: node:20-alpine
+                    command: npm ci --prefer-offline
+              - step:
+                  type: Run
+                  name: Lint
+                  identifier: lint
+                  spec:
+                    connectorRef: dockerhub_connector
+                    image: node:20-alpine
+                    command: npm run lint
+              - step:
+                  type: Run
+                  name: Unit Tests
+                  identifier: unit_tests
+                  spec:
+                    connectorRef: dockerhub_connector
+                    image: node:20-alpine
+                    command: npm test -- --coverage
+                    reports:
+                      type: JUnit
+                      spec:
+                        paths:
+                          - "**/junit.xml"
+              - step:
+                  type: BuildAndPushDockerRegistry
+                  name: Build and Push Image
+                  identifier: build_push
+                  spec:
+                    connectorRef: ecr_connector
+                    repo: 123456789.dkr.ecr.us-east-1.amazonaws.com/node-service
+                    tags:
+                      - <+pipeline.sequenceId>
+                      - latest
+    - stage:
+        name: Deploy Staging
+        identifier: deploy_staging
+        type: Deployment
+        spec:
+          deploymentType: Kubernetes
+          service:
+            serviceRef: node_service
+          environment:
+            environmentRef: staging
+            deployToAll: false
+            infrastructureDefinitions:
+              - identifier: staging_eks
+          execution:
+            steps:
+              - step:
+                  type: K8sRollingDeploy
+                  name: Rolling Deploy
+                  identifier: rolling_deploy
+                  spec:
+                    skipDryRun: false
+            rollbackSteps:
+              - step:
+                  type: K8sRollingRollback
+                  name: Rollback
+                  identifier: rollback
+                  spec: {}
+        failureStrategies:
+          - onFailure:
+              errors:
+                - AllErrors
+              action:
+                type: StageRollback
+```
 
-## A Practical Architecture
+A few things to notice in that YAML. First, connectors are referenced by identifier (`ecr_connector`, `prod_k8s_connector`) rather than embedding credentials inline. The delegate resolves those references at runtime, keeping secrets out of the pipeline definition. Second, the `<+pipeline.sequenceId>` expression is a Harness built-in variable that evaluates to the pipeline run number — useful for immutable image tags. Third, failure strategies are declared per stage. You can configure rollback, retry, mark as success, or abort the pipeline on any failure class, and those decisions live in code rather than in someone's head.
 
-A production-ready approach to this usually has five layers: interface, context, reasoning, action, and evaluation. The interface is where users express intent. It might be a chat box, command line, editor extension, dashboard, API endpoint, or background job. The interface should make the expected result obvious and should expose enough controls for the user to review or redirect the work.
+### Stage Types and When to Use Each
 
-The context layer gathers the information the system needs. This layer can include retrieval from documents, code search, database records, logs, metrics, tickets, configuration files, or user-provided examples. Good context is selective. Sending everything to a model increases cost and noise. A better pattern is to retrieve the smallest set of evidence that can support the next decision.
+Harness pipelines support several stage types beyond CI and Deployment. **Feature Flag** stages let you roll out configuration changes as a first-class pipeline step, complete with approvals and rollback. **Approval** stages gate progression on a manual click, a Jira ticket status change, or a ServiceNow change window. **Custom** stages run arbitrary step groups when no built-in type fits.
 
-The reasoning layer chooses a plan or produces an answer. This may be a single model call, a chain of calls, a workflow graph, or an agent loop. Keep this layer simple until complexity is justified. Many teams build elaborate multi-agent systems before they can reliably evaluate one model call. That usually makes debugging harder.
+### Pipeline Templates
 
-The action layer connects the system to tools. These tools can include pipelines, source control, build runners, deployment targets, observability tools, feature flags, policy checks, and incident workflows; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations. Tool use should be explicit, typed, logged, and permissioned. When an action can affect data, infrastructure, cost, or customers, require approval or run it in a sandbox first.
+Templates are where Harness starts saving significant engineering time in larger organizations. You can extract a stage, a step, or an entire pipeline into a template, publish it to the template library with a version tag, and reference it from any pipeline across the organization.
 
-The evaluation layer closes the loop. It should track deployment frequency, lead time, failed deployment rate, rollback time, build duration, and cloud spend variance; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership and preserve examples of both success and failure. Without this layer, teams are forced to judge quality by anecdotes. With it, they can improve prompts, retrieval, model choice, and workflow design with evidence.
+```yaml
+  - stage:
+      name: Security Scan
+      template:
+        templateRef: org.security_scan_stage
+        versionLabel: "2.1"
+        templateInputs:
+          stage:
+            spec:
+              execution:
+                steps:
+                  - step:
+                      identifier: snyk_scan
+                      type: Run
+                      spec:
+                        envVariables:
+                          TARGET_DIR: <+input>
+```
 
-## How to Evaluate Quality
+When the security team updates template version 2.1, every pipeline referencing it can reconcile with the new version. That is a fundamentally different governance model than copy-pasting YAML across repositories and hoping people remember to keep it in sync.
 
-Evaluation is where serious AI work separates itself from experimentation. A useful evaluation plan for this starts with real tasks. Gather examples from support tickets, pull requests, internal documents, analytics requests, incident reports, or customer conversations. Remove sensitive information, then turn those examples into a small but representative test set.
+## Delegates Explained: Networking, Deployment, and Sizing
 
-Each test case should define the input, the expected behavior, and the failure modes that matter. For some tasks, the expected result is exact. For example, a JSON extraction task can be checked against a schema. For other tasks, the expected result is judged by a rubric. A good rubric might score correctness, completeness, clarity, citation quality, security awareness, and usefulness.
+The delegate is a Java-based agent that runs in your infrastructure and executes tasks dispatched by the Harness control plane. It supports Kubernetes (the most common deployment), Docker, and bare-metal installation.
 
-Do not rely on a single aggregate score. Track dimensions separately. A system can be fast and cheap while still being wrong. It can be accurate but too slow for interactive use. It can produce polished language while ignoring important constraints. The right choice depends on which dimension is binding for the workflow.
+### How the Task Queue Works
 
-For this topic, useful metrics include deployment frequency, lead time, failed deployment rate, rollback time, build duration, and cloud spend variance; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership. Add qualitative review for edge cases. Keep examples where the system failed, because those examples become the most valuable part of the evaluation set. When you change prompts, retrieval rules, model versions, or tool permissions, rerun the same cases.
+The delegate establishes a long-lived HTTPS connection to the Harness task queue. When a pipeline step needs to run — pull an image, apply a manifest, run a script — the control plane enqueues a task. The delegate picks it up, executes the step, streams logs back, and posts the result. The delegate never receives inbound traffic, which is why the networking model is so firewall-friendly.
 
-Evaluation also protects teams from demo bias. A demo tends to show happy paths. A test set shows what happens when inputs are messy, incomplete, adversarial, or simply boring. Real users send all four.
+```mermaid
+sequenceDiagram
+    participant CP as Harness Control Plane
+    participant TQ as Task Queue
+    participant D as Delegate
+    participant K8s as Kubernetes API
+    participant ECR as Container Registry
 
-## Implementation Plan
+    CP->>TQ: Enqueue task (K8sRollingDeploy)
+    D->>TQ: Poll for tasks (HTTPS outbound)
+    TQ-->>D: Task payload + credentials ref
+    D->>D: Resolve connector credentials
+    D->>ECR: Pull image digest
+    ECR-->>D: Image metadata
+    D->>K8s: Apply deployment manifest
+    K8s-->>D: Rollout status
+    D->>CP: Stream logs + emit task result
+    CP->>CP: Update pipeline execution state
+```
 
-Start by writing a one-page problem statement. Describe the users, the job they are trying to complete, the current pain, and the measurable result you want. This keeps the project anchored in a business or engineering outcome instead of a vague AI initiative.
+### Delegate Deployment on Kubernetes
 
-Next, map the workflow from request to final review. Identify where context enters the system, where the model is used, where a tool is called, and where a human approves the result. Mark any step that touches customer data, production infrastructure, financial spend, or security-sensitive information. Those steps need stronger controls.
+The most production-ready way to run a delegate is as a Kubernetes Deployment with at least two replicas. Harness provides a Helm chart that handles most of the configuration:
 
-Then build the smallest working version. Use existing tools where possible. Connect only the context sources that matter. Add simple logging. Save inputs and outputs for review. Avoid building a generalized platform before you know which workflow will survive contact with users.
+```yaml
+# values.yaml for harness-delegate helm chart
+replicaCount: 2
 
-After the first version works, run it against a test set. Review failures in batches. Some failures will be prompt problems. Some will be retrieval problems. Some will be product problems, where the interface lets users ask for work the system cannot safely perform. Fix the highest-impact category first.
+delegate:
+  name: prod-delegate
+  accountId: YOUR_ACCOUNT_ID
+  delegateToken: <from harness ui>
+  tags:
+    - prod
+    - us-east-1
 
-For general adoption, focus on one team and one workflow first. A narrow workflow with visible value is easier to improve than a broad platform that nobody understands.
+resources:
+  requests:
+    cpu: "1"
+    memory: 2Gi
+  limits:
+    cpu: "2"
+    memory: 4Gi
 
-Finally, write an operating guide. Include setup steps, permissions, expected inputs, known limitations, escalation rules, and evaluation commands. A tool that only one person knows how to operate is not production-ready, even if it works well in a notebook.
+env:
+  JAVA_OPTS: "-Xms1g -Xmx2g"
+  DELEGATE_TASK_CAPACITY: "20"
+```
 
-## Common Mistakes to Avoid
+### Sizing the Delegate
 
-The first mistake is adopting this approach without a clear owner. AI work crosses product, engineering, legal, security, and operations. If nobody owns the workflow, decisions become fragmented. Assign an owner who can prioritize the use case, gather feedback, and decide when the system is good enough to expand.
+Under-sizing the delegate is the most common operational mistake I see. Each concurrent task consumes CPU and memory, and the JVM heap needs headroom for garbage collection spikes during heavy pipeline runs. My baseline recommendation for a team running twenty to thirty pipeline executions per hour:
 
-The second mistake is trusting polished output. Large language models are good at sounding confident. That does not mean the answer is grounded. Require citations, retrieved evidence, tests, schemas, or human review when the task has real consequences. The review process should be designed before the system is widely used.
+- **CPU request:** 1 core, **limit:** 2 cores
+- **Memory request:** 2 GiB, **limit:** 4 GiB
+- **JVM heap:** `-Xms1g -Xmx2g`
+- **Replicas:** 2 minimum, 3 during on-call deployment windows
+- **Task capacity:** 15–20 concurrent tasks per replica
 
-The third mistake is hiding uncertainty. If the system is missing context, blocked by permissions, or making an assumption, the user should see that. A clear refusal or a request for more information is better than a fabricated answer. This is especially important in software delivery, CI/CD automation, release governance, and cloud cost control; AI tools, developer productivity, automation platforms, and practical AI workflows because small errors can cascade through technical decisions.
+For teams with heavier CI workloads — say, running Docker builds inside the delegate — move to 4 GiB request and 8 GiB limit, and separate build delegates from deployment delegates using tags.
 
-The fourth mistake is ignoring cost and latency until late. Token usage, tool calls, retries, and long context windows can become expensive. Measure cost per successful task, not only cost per model call. A cheaper model that requires repeated human cleanup may be more expensive than a stronger model with fewer failures.
+### Delegate Tags and Selector Logic
 
-The fifth mistake is skipping change management. Users need to know what the system is for, when to trust it, and how to report problems. Good rollout includes examples, office hours, documentation, and a feedback loop. Adoption is a product problem, not only an engineering problem.
+Tags let pipelines route tasks to specific delegates. A pipeline stage targeting production sets `delegateSelectors: [prod, us-east-1]`. A stage targeting the dev environment sets `delegateSelectors: [dev]`. The delegate selector is a logical AND by default: the task routes to any delegate that has all specified tags. This pattern keeps network traffic for production deployments inside the production network segment without any firewall policy changes.
 
-## Recommended Stack and Workflow
+## Connectors and Integrations
 
-A strong stack for this does not have to be complicated. Begin with a stable interface, a small set of trusted context sources, a reliable model or tool provider, and a visible review step. Add orchestration only when the workflow genuinely needs multiple steps or tool calls.
+Connectors are the abstraction layer between Harness and everything else. Every external system — source control, container registries, cloud providers, ticketing tools, artifact repositories — is represented as a connector. Credentials are stored in your secrets manager (HashiCorp Vault, AWS Secrets Manager, GCP Secret Manager, Azure Key Vault, or Harness's own built-in store) and referenced by the connector. The delegate retrieves the secret at task execution time; the credential never appears in the pipeline YAML or the control plane UI.
 
-For context, prefer sources that are maintained as part of normal work: repositories, docs, tickets, runbooks, dashboards, and customer records with appropriate access controls. Stale context creates stale answers. If the knowledge base is not maintained, retrieval will not save the system.
+The connector test feature is one of those small ergonomic wins that prevents hours of debugging. Before saving a connector, you can click **Test Connection** and Harness will dispatch a lightweight task to a delegate, attempt to authenticate with the target system, and report success or failure with a specific error message. Catching a misconfigured IAM role or expired token at connector creation time is much cheaper than discovering it during a production pipeline run.
 
-For model selection, test more than one option. Compare quality, latency, cost, context length, structured output support, tool calling behavior, privacy terms, and operational fit. The best model for drafting a document may not be the best model for code repair, classification, or high-volume summarization.
+Commonly used connectors:
 
-For workflow control, use typed inputs and outputs. JSON schemas, templates, checklists, and approval forms make results easier to validate. They also help users understand what the system can do. Free-form chat is useful for exploration, but production workflows benefit from structure.
+| Connector Type | Examples | Authentication Methods |
+|---|---|---|
+| Source Control | GitHub, GitLab, Bitbucket, Azure Repos | OAuth, SSH key, Personal access token |
+| Container Registry | ECR, GAR, Docker Hub, JFrog Artifactory | IAM role, service account, username/password |
+| Kubernetes | EKS, GKE, AKS, self-managed | Kubeconfig, service account, IRSA |
+| Cloud Provider | AWS, GCP, Azure | OIDC, IAM role, service account key |
+| Artifact Repository | Nexus, Artifactory, S3, GCS | Username/password, IAM role |
+| Ticketing | Jira, ServiceNow | API token, OAuth |
 
-For monitoring, capture prompt versions, retrieval hits, model names, tool calls, latency, token usage, user edits, and final outcomes. These records make it possible to debug quality issues and defend decisions later. Monitoring also helps teams decide when a prompt needs a small change and when the workflow needs a redesign.
+OIDC-based authentication for cloud connectors deserves a mention. Rather than storing long-lived cloud credentials in a secrets manager, you configure the cloud provider to trust tokens issued by Harness. The delegate exchanges a short-lived OIDC token for temporary cloud credentials at task execution time. This eliminates credential rotation as an operational concern and removes a category of secret leakage risk.
 
-## Decision Checklist
+## AI-Powered Features
 
-Use a decision checklist before you invest deeply. The checklist should force the team to connect the technology to a measurable workflow. For this topic, the most useful criteria are usually workflow fit, output quality, integration effort, operating cost, security posture, and long-term maintainability.
+Harness has been shipping AI features under the **AIDA** (AI Development Assistant) brand since 2023, and the quality has improved considerably over the past year. The features worth knowing about in 2026:
 
-Ask these questions before adoption:
+**Pipeline failure analysis.** When a pipeline step fails, AIDA analyzes the build logs and provides a natural language explanation of the root cause alongside suggested fixes. In my experience this is genuinely useful for CI failures — it correctly identifies things like missing environment variables, version conflicts in package.json, and Kubernetes resource quota breaches. It is less reliable for deep application-level test failures, where it tends to describe the symptom rather than the cause.
 
-- What user job will this improve?
-- What evidence shows that the current workflow is slow, expensive, or error-prone?
-- What context does the system need, and who owns that context?
-- What actions can the system take, and which actions require approval?
-- What data must never be sent to a third-party service?
-- How will we measure deployment frequency, lead time, failed deployment rate, rollback time, build duration, and cloud spend variance; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership?
-- What happens when the model is uncertain or wrong?
-- Who reviews failures and improves the workflow?
-- What is the rollback plan if quality drops?
+**Code suggestions in the pipeline editor.** The YAML editor in the Harness UI now offers AI-assisted step completion. When you type a step type and pause, AIDA suggests configuration based on the connector type and the preceding steps in the stage. This is most useful when onboarding people who are not yet fluent in Harness YAML.
 
-The answers do not need to be perfect at the start. They do need to be explicit. Explicit assumptions can be tested. Hidden assumptions become production incidents, budget surprises, or tools that nobody uses.
+**Security test orchestration insights.** On the STO (Security Testing Orchestration) module, AIDA summarizes vulnerability scan results in plain language and prioritizes findings by exploitability. For large codebases with hundreds of CVE findings, having a readable triage summary rather than a raw JSON report meaningfully reduces the time to first remediation action.
 
-A good decision also includes a stop rule. Decide what result would make the team pause or abandon the rollout. This protects the organization from continuing an AI project simply because it is already in motion.
+**Cost optimization recommendations.** The Cloud Cost Management module has started surfacing AI-generated recommendations that go beyond simple right-sizing suggestions. I have seen it correctly identify that a team's staging environment was running twenty-four hours a day when it was only needed during business hours, and generate a cost estimate for the projected savings.
+
+None of these features are magic, and they all benefit from human review before acting on the recommendations. But they do reduce the time engineers spend context-switching between systems to diagnose problems.
+
+## Governance and Policy
+
+Harness ships a built-in Open Policy Agent integration. You write Rego policies, publish them to the policy set library, and assign them to pipelines, connectors, or environments. Policies evaluate on pipeline save, on run start, or on stage completion — you choose the evaluation point.
+
+A practical example: enforce that no pipeline deploys to a production environment without at least one approval step.
+
+```rego
+package pipeline
+
+deny[msg] {
+  stage := input.pipeline.stages[_].stage
+  stage.spec.serviceConfig.serviceDefinition.spec.environmentRef == "production"
+  not has_approval_before(stage)
+  msg := sprintf("Stage '%s' deploys to production without an upstream approval stage", [stage.name])
+}
+
+has_approval_before(stage) {
+  some earlier_stage
+  input.pipeline.stages[earlier_stage].stage.type == "Approval"
+  earlier_stage < stage_index(stage)
+}
+```
+
+Policy failures surface as pipeline save errors in the UI and as API errors in GitOps workflows, which means developers get fast feedback rather than discovering the violation at deployment time.
+
+```mermaid
+flowchart TD
+    PR[Developer opens PR<br/>pipeline YAML changed] --> GIT[Git trigger fires]
+    GIT --> POLICY{OPA Policy<br/>Evaluation}
+    POLICY -->|Fail| BLOCK[Pipeline save blocked<br/>Policy violation surfaced]
+    POLICY -->|Pass| RUN[Pipeline execution starts]
+    RUN --> CI[CI stage — build, test, scan]
+    CI -->|Failure| AIDA[AIDA analyzes logs<br/>Root cause + suggestion]
+    CI -->|Pass| GATE{Approval Stage<br/>Required for prod?}
+    GATE -->|No — not prod| DEPLOY_STG[Deploy to staging]
+    GATE -->|Yes — prod target| APPROVAL[Manual approval<br/>or Jira ticket check]
+    APPROVAL -->|Rejected| ABORT[Execution aborted<br/>Notification sent]
+    APPROVAL -->|Approved| DEPLOY_PROD[Deploy to production<br/>Rolling or canary]
+    DEPLOY_PROD -->|Failure| ROLLBACK[Automatic rollback<br/>Stage failure strategy]
+    DEPLOY_PROD -->|Success| VERIFY[Verification step<br/>Metrics / log analysis]
+    DEPLOY_STG --> SUCCESS[Staging success<br/>Artifact promoted]
+```
+
+The governance model becomes powerful when combined with environment-level RBAC. You can structure Harness so that only the delegate service account has `kubectl` access to production namespaces, only senior engineers can approve production deployments, and only the security team can modify policy sets. These controls live in Harness rather than being split across ten different tools.
+
+## Best Practices
+
+After running Harness in production for two years, a few practices have made a consistent difference:
+
+**Store pipeline YAML in your application repository.** Harness supports inline storage (managed in the Harness UI) and remote storage (YAML in Git). Use remote storage. It gives you PR-based reviews for pipeline changes, rollback via Git revert, and audit history in the same place as application code changes.
+
+**Separate delegates by trust boundary.** Production and non-production environments should use separate delegates. This is not just a security principle — it also prevents a runaway CI build from consuming the resources your delegate needs for a production deployment.
+
+**Use templates aggressively.** The upfront cost of extracting a step or stage into a template is low. The compounding benefit as the organization grows is high. Every security scan, every notification step, every approval gate that lives in a template rather than in individual pipelines is one fewer place that needs to be updated when requirements change.
+
+**Version your templates explicitly.** Stable templates should have explicit semantic version labels, not `latest`. Pipelines referencing `org.security_scan_stage:latest` will silently pick up breaking changes. Pipelines referencing `org.security_scan_stage:2.1` will not update until a developer explicitly reconciles.
+
+**Test failure strategies before you need them.** Inject a deliberate failure into a non-production pipeline and verify that rollback actually runs. The worst time to discover that your failure strategy has a typo is during a production incident.
+
+**Monitor delegate health proactively.** Harness exposes delegate metrics via the UI and API. Set up alerts for delegate heartbeat loss and for high task queue depth. A dead delegate is silent by default — pipelines will queue indefinitely rather than failing immediately, which makes it harder to diagnose.
+
+## Verdict
+
+Harness is a genuinely capable platform for teams that have grown past the complexity that simpler CI/CD tools handle well. The delegate architecture solves real enterprise networking problems without requiring complex firewall rules. The template and policy system provides governance that scales across large engineering organizations. The AI features are production-useful rather than demo-only.
+
+The rough edges are real. The YAML surface area is large, and the visual editor sometimes generates YAML that surprises you when you read it directly. The Java-based delegate has a meaningful memory footprint. Documentation quality is uneven — some modules have excellent guides, others have thin coverage that forces you to rely on community Slack or support tickets.
+
+For teams shipping production software at scale — especially those that need auditability, multi-cloud deployments, and policy enforcement — the platform earns its place in the stack. For small teams with simple workflows, the operational overhead of the delegate and the learning curve of the YAML model may outweigh the benefits.
+
+---
 
 ## FAQ
 
-### Is this only for advanced AI teams?
+### What is the difference between a Harness pipeline and a workflow in the legacy CD product?
 
-No. The concepts are useful for small teams as well, but the implementation should match the team's maturity. A small team can start with a narrow workflow, manual review, and simple logs. A larger organization may need policy controls, shared evaluation infrastructure, and formal approval paths.
+Harness unified its product line under the **Next Generation** platform (now simply called "Harness Platform") starting in 2022. The legacy Harness CD product used "workflows" and "deployments" as the primary abstractions. The current platform uses pipelines with typed stages for everything — CI, CD, feature flags, approvals, custom steps. If you see documentation referring to "workflows," it is describing the older product and the configuration will not translate directly.
 
-### What is the biggest risk?
+### Can Harness delegates run in a fully air-gapped environment?
 
-The biggest risk is not that the model makes one obvious mistake. The bigger risk is that a workflow quietly produces plausible but wrong output at scale. This is why evaluation, review, and monitoring matter. Treat AI output as work that needs quality control, not as magic.
+Yes. Harness provides an on-premises control plane option (Harness Self-Managed Enterprise Edition) for environments that cannot allow outbound internet traffic. In the SaaS model with air-gapped internal networks, you can route delegate traffic through an HTTP proxy — the delegate respects standard `HTTPS_PROXY` environment variables. The delegate image can also be pulled from an internal registry rather than directly from Docker Hub.
 
-### How long does adoption take?
+### How does Harness handle secrets, and do credentials ever reach the control plane?
 
-A useful prototype can often be built quickly, but production adoption takes longer because teams need permissions, evaluation, documentation, and user feedback. Plan for iteration. The first version should teach you which assumptions were wrong.
+Credentials stored in connected secret managers (Vault, AWS Secrets Manager, and so on) are resolved by the delegate at task execution time. The resolved secret value is used in memory for the duration of the step and is never sent back to the Harness control plane. Harness's own built-in secrets store encrypts values at rest using a customer-managed key. The control plane only stores a reference identifier, not the credential value.
 
-### Should we build or buy?
+### What is the recommended strategy for migrating from Jenkins to Harness?
 
-Buy when the workflow is common, the vendor integrates with your stack, and the risk profile is acceptable. Build when the workflow depends on proprietary context, custom tools, or differentiated product behavior. Many teams use a hybrid approach: buy model access or infrastructure, then build the workflow layer themselves.
+Start with a greenfield pipeline for new services rather than attempting a big-bang migration of existing Jenkinsfiles. Use the time to establish your connector library, delegate naming conventions, and template patterns. Once those are stable, migrate service by service, beginning with the ones that have the most frequent pipeline failures or the most manual steps — those are where the Harness governance and AI features deliver the fastest visible value. Harness has a Jenkinsfile converter that produces rough Harness YAML, but treat the output as a starting point for review rather than production-ready configuration.
 
-### How should success be measured?
+### Does Harness support GitOps, and how does it relate to the delegate?
 
-Measure outcomes rather than excitement. Good measures include deployment frequency, lead time, failed deployment rate, rollback time, build duration, and cloud spend variance; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership. Add human review quality and user adoption data. If people try the system once and return to the old process, the rollout has not succeeded.
-
-## Final Takeaway
-
-This approach is valuable when it is connected to a real workflow, evaluated against real examples, and operated with clear boundaries. The winning teams will not be the ones with the longest list of AI tools. They will be the teams that turn AI into repeatable, observable, and trusted work.
-
-Start small, measure honestly, and improve the system with evidence. Use pipelines, source control, build runners, deployment targets, observability tools, feature flags, policy checks, and incident workflows; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations where they fit, but keep the focus on faster releases with lower operational risk; clearer tool selection and workflows that save time without creating hidden risk. That is the difference between an impressive demo and a capability that keeps paying off after the novelty fades.
+Yes. Harness GitOps is built on Argo CD under the hood, managed through the Harness control plane. The GitOps agent — similar in role to the delegate — runs in your cluster and syncs application state from a Git repository. You can use Harness pipelines to manage the PR merge that triggers a GitOps sync, giving you both the pipeline-based deployment model (for CI, testing, and approval gates) and the GitOps model (for declarative state reconciliation) in the same platform, governed by the same policy engine and RBAC system.

@@ -2,145 +2,334 @@
 title: "Model Context Protocol (MCP): What It Is and Why It Matters"
 date: "2026-03-15"
 slug: "model-context-protocol-mcp-what-it-is-why-it-matters"
-description: "A practical, developer-friendly guide to model context protocol (mcp): what it is and why it matters with architecture, evaluation, rollout advice, and FAQ."
+description: "Model Context Protocol (MCP) explained: the open standard that lets AI models talk to any tool or data source without custom glue code."
 heroImage: "/images/heroes/model-context-protocol-mcp-what-it-is-why-it-matters.webp"
 tags: [ai-agents, ai-tools]
 ---
 
-This topic is a practical topic for teams that want AI to create durable value instead of short demos.
+I spent an afternoon last month trying to connect Claude to a private GitHub repo, a Postgres database, and a Slack workspace at the same time. Without MCP, that meant writing three separate integrations, each with its own auth flow, context-injection logic, and error handling. With MCP, it meant running three community servers and pointing Claude Desktop at them. The contrast was stark enough that I stopped what I was doing and read the spec from start to finish.
 
-This guide is written for builders who want to move beyond chatbots into systems that can use tools and complete work; operators, developers, founders, analysts, and teams comparing AI products for daily work. It focuses on AI agents, tool use, memory, orchestration, planning, and autonomous workflows; AI tools, developer productivity, automation platforms, and practical AI workflows and explains how to evaluate the topic in a way that leads to agent workflows that are useful, bounded, observable, and recoverable; clearer tool selection and workflows that save time without creating hidden risk. The emphasis is practical: what the concept means, how it fits into a real stack, what trade-offs matter, and how to avoid common implementation mistakes.
+If you have been building AI-powered tooling in 2025 or 2026, you have almost certainly heard the acronym. This article explains what the Model Context Protocol actually is, why the problem it solves is real and non-trivial, how the protocol works under the hood, and how to start building with it today.
 
-The AI market changes quickly, so this article avoids brittle claims about exact pricing or one-time benchmark rankings. Use it as a durable decision framework, then confirm vendor limits, model names, and pricing on the official product pages before you buy or deploy.
+## What Is MCP?
 
-## What It Really Means
+The Model Context Protocol (MCP) is an open standard, published by Anthropic in late 2024, that defines a common interface between AI applications and the external tools, data sources, and services those applications need to use.
 
-At a high level, This topic sits inside AI agents, tool use, memory, orchestration, planning, and autonomous workflows; AI tools, developer productivity, automation platforms, and practical AI workflows. The important point is not the label itself. The important point is the workflow it enables. A useful AI tool or model should reduce the distance between a user's intent and a correct, reviewed result. It should also make the work easier to observe, improve, and govern over time.
+In plain terms: MCP is a universal adapter for AI. Instead of every AI host (Claude Desktop, Cursor, your custom agent) needing to know exactly how to talk to every service (GitHub, Postgres, Slack, your internal APIs), MCP defines a single protocol both sides agree on. The AI host speaks MCP. The service exposes an MCP server. They can communicate without any custom glue.
 
-For a developer team, that usually means three things. First, the system has to understand enough context to be useful. That context might be source code, product documentation, logs, tickets, metrics, documents, examples, or previous decisions. Second, the system needs a reliable way to act. That action might be generating code, calling an API, searching a knowledge base, opening a pull request, drafting a release plan, or summarizing a customer conversation. Third, the system needs a feedback loop so the team can measure quality and fix regressions.
+The spec covers three categories of capability:
 
-A common mistake is to treat this as a single product decision. In practice, it is an operating model. The best teams define where AI is allowed to help, where humans must review, how outputs are tested, and what happens when the system is uncertain. That operating model matters more than the name on the invoice.
+- **Resources** — data and files the server exposes that the model can read (database records, repository contents, file system entries)
+- **Tools** — actions the model can invoke with arguments (run a SQL query, create a GitHub issue, send a Slack message)
+- **Prompts** — reusable prompt templates the server publishes, which the host can surface to users
 
-When you compare options, ask whether the tool fits the jobs people already do. A strong system should work with tool schemas, task queues, planners, memory stores, retrieval, sandboxed execution, approvals, traces, and evaluation harnesses; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations. It should improve a real process without forcing every team to rebuild its workflow from scratch. If adoption requires too much ritual, the system will look impressive in a demo and then disappear from daily use.
+MCP is transport-agnostic and model-agnostic. It works over standard I/O (for local processes) or HTTP with Server-Sent Events (for remote servers), and any model that runs inside an MCP-aware host can use any MCP server without changes to either side.
 
-## Where It Creates Value
+## The Problem MCP Solves
 
-The best use cases are repetitive enough to benefit from automation but nuanced enough to justify AI. Purely mechanical work can often be handled with scripts. Highly ambiguous strategy work still needs experienced people. The attractive middle ground is work where context, judgment, and speed all matter.
+Before MCP, the integration landscape for AI tools was a classic N×M problem.
 
-One common use case is research and synthesis. Teams can use AI to gather scattered information, compare options, and turn notes into a structured recommendation. This is useful for architecture reviews, vendor selection, incident summaries, release notes, and customer support analysis. The output should not be accepted blindly, but it can shorten the first draft from hours to minutes.
+Imagine you have N different AI applications — Claude Desktop, a custom VS Code extension, a LangChain agent, a Slack bot, a CI pipeline assistant. Each of these needs to integrate with M different services — GitHub, Jira, Postgres, S3, Notion, your internal knowledge base, your deployment API.
 
-A second use case is assisted execution. In software teams, that may mean code generation, test generation, migration planning, configuration review, or pull request analysis. In operations teams, it may mean triage, runbook lookup, log summarization, or routing incidents to the right owner. The important boundary is that AI should work inside a controlled path, not improvise across production systems without oversight.
+Without a standard, each of those N applications writes its own integration for each of those M services. That is N×M implementations, each slightly different, each maintained separately, each a fresh source of bugs. When a service changes its API, every one of those N integrations breaks independently.
 
-A third use case is quality improvement. AI can help create test cases, summarize failures, classify feedback, detect inconsistencies, and highlight missing documentation. This is where the approach often produces compounding value. Each cycle improves the team's knowledge base, examples, evaluation cases, and standard operating procedures.
+MCP collapses the matrix. Each service writes one MCP server. Each AI application implements one MCP client. The total integration surface becomes N+M instead of N×M. A GitHub MCP server works with Claude Desktop, Cursor, Zed, your custom agent, and anything else that speaks the protocol — with no extra code on either side.
 
-The strongest teams start with one or two narrow workflows. They measure completion rate, tool error rate, human intervention rate, step count, cost per task, and recovery success; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership before and after adoption. Then they expand only when the data shows that the system helps. This keeps the project grounded and prevents the team from chasing novelty.
+This is the same insight that drove the Language Server Protocol (LSP) to success in the editor world. Before LSP, every editor needed a custom plugin for every language. After LSP, language tooling became independent of the editor. MCP is the LSP moment for AI tool use.
 
-## A Practical Architecture
+## MCP Architecture
 
-A production-ready approach to this usually has five layers: interface, context, reasoning, action, and evaluation. The interface is where users express intent. It might be a chat box, command line, editor extension, dashboard, API endpoint, or background job. The interface should make the expected result obvious and should expose enough controls for the user to review or redirect the work.
+The protocol uses a three-tier model: host, client, and server.
 
-The context layer gathers the information the system needs. This layer can include retrieval from documents, code search, database records, logs, metrics, tickets, configuration files, or user-provided examples. Good context is selective. Sending everything to a model increases cost and noise. A better pattern is to retrieve the smallest set of evidence that can support the next decision.
+```mermaid
+graph TD
+    H[MCP Host<br/>Claude Desktop / Cursor / Custom Agent]
+    H --> C1[MCP Client 1]
+    H --> C2[MCP Client 2]
+    H --> C3[MCP Client 3]
+    C1 -->|JSON-RPC| S1[MCP Server<br/>GitHub]
+    C2 -->|JSON-RPC| S2[MCP Server<br/>Postgres]
+    C3 -->|JSON-RPC| S3[MCP Server<br/>Filesystem]
+    S1 --> R1[Resources<br/>repos, files, PRs]
+    S1 --> T1[Tools<br/>create_issue, list_prs]
+    S2 --> R2[Resources<br/>schemas, rows]
+    S2 --> T2[Tools<br/>execute_query]
+    S3 --> R3[Resources<br/>files, directories]
+    S3 --> T3[Tools<br/>read_file, write_file]
+```
 
-The reasoning layer chooses a plan or produces an answer. This may be a single model call, a chain of calls, a workflow graph, or an agent loop. Keep this layer simple until complexity is justified. Many teams build elaborate multi-agent systems before they can reliably evaluate one model call. That usually makes debugging harder.
+**The host** is the AI application the user interacts with. It manages the conversation, maintains context, and decides when to call tools. Claude Desktop and Cursor are both hosts. A custom agent you build is a host.
 
-The action layer connects the system to tools. These tools can include tool schemas, task queues, planners, memory stores, retrieval, sandboxed execution, approvals, traces, and evaluation harnesses; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations. Tool use should be explicit, typed, logged, and permissioned. When an action can affect data, infrastructure, cost, or customers, require approval or run it in a sandbox first.
+**The client** is a component inside the host that manages the connection to a single MCP server. One host can run multiple clients simultaneously — one per server — so Claude Desktop can be talking to GitHub, Postgres, and your filesystem at the same time.
 
-The evaluation layer closes the loop. It should track completion rate, tool error rate, human intervention rate, step count, cost per task, and recovery success; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership and preserve examples of both success and failure. Without this layer, teams are forced to judge quality by anecdotes. With it, they can improve prompts, retrieval, model choice, and workflow design with evidence.
+**The server** is the process that exposes capabilities to the model. It advertises which resources, tools, and prompts it offers, handles requests from the client, and returns structured results. The server can be a local process (great for filesystem or database access) or a remote service (great for SaaS APIs).
 
-## How to Evaluate Quality
+The model itself never talks directly to servers. The host reads the server's capability list, includes relevant context in the model's prompt, and mediates tool calls between the model and the server. This gives the host full control over what the model can access.
 
-Evaluation is where serious AI work separates itself from experimentation. A useful evaluation plan for this starts with real tasks. Gather examples from support tickets, pull requests, internal documents, analytics requests, incident reports, or customer conversations. Remove sensitive information, then turn those examples into a small but representative test set.
+## How MCP Works Under the Hood
 
-Each test case should define the input, the expected behavior, and the failure modes that matter. For some tasks, the expected result is exact. For example, a JSON extraction task can be checked against a schema. For other tasks, the expected result is judged by a rubric. A good rubric might score correctness, completeness, clarity, citation quality, security awareness, and usefulness.
+MCP is built on JSON-RPC 2.0, a lightweight remote procedure call protocol that uses JSON for encoding. If you have worked with the Language Server Protocol, the message format will feel familiar.
 
-Do not rely on a single aggregate score. Track dimensions separately. A system can be fast and cheap while still being wrong. It can be accurate but too slow for interactive use. It can produce polished language while ignoring important constraints. The right choice depends on which dimension is binding for the workflow.
+### Transport Layers
 
-For this topic, useful metrics include completion rate, tool error rate, human intervention rate, step count, cost per task, and recovery success; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership. Add qualitative review for edge cases. Keep examples where the system failed, because those examples become the most valuable part of the evaluation set. When you change prompts, retrieval rules, model versions, or tool permissions, rerun the same cases.
+MCP supports two transport mechanisms:
 
-Evaluation also protects teams from demo bias. A demo tends to show happy paths. A test set shows what happens when inputs are messy, incomplete, adversarial, or simply boring. Real users send all four.
+**Standard I/O (stdio)** — The host spawns the server as a child process and communicates over stdin/stdout. This is the simplest option and works well for local servers. Claude Desktop uses stdio for most of its bundled servers.
 
-## Implementation Plan
+**HTTP + Server-Sent Events (SSE)** — The host connects to a remote HTTP endpoint. The server streams events back to the client using SSE. This works for hosted servers that need to run somewhere other than the user's machine.
 
-Start by writing a one-page problem statement. Describe the users, the job they are trying to complete, the current pain, and the measurable result you want. This keeps the project anchored in a business or engineering outcome instead of a vague AI initiative.
+### The Handshake
 
-Next, map the workflow from request to final review. Identify where context enters the system, where the model is used, where a tool is called, and where a human approves the result. Mark any step that touches customer data, production infrastructure, financial spend, or security-sensitive information. Those steps need stronger controls.
+When a client connects to a server, they perform a capability negotiation:
 
-Then build the smallest working version. Use existing tools where possible. Connect only the context sources that matter. Add simple logging. Save inputs and outputs for review. Avoid building a generalized platform before you know which workflow will survive contact with users.
+1. The client sends an `initialize` request that includes the protocol version it supports and its own capabilities.
+2. The server responds with its protocol version, its capabilities, and metadata about itself.
+3. The client sends an `initialized` notification to confirm the handshake is complete.
 
-After the first version works, run it against a test set. Review failures in batches. Some failures will be prompt problems. Some will be retrieval problems. Some will be product problems, where the interface lets users ask for work the system cannot safely perform. Fix the highest-impact category first.
+After initialization, the client can query the server for its list of resources (`resources/list`), tools (`tools/list`), and prompts (`prompts/list`). These lists are included in the context the host provides to the model so it knows what actions are available.
 
-For general adoption, focus on one team and one workflow first. A narrow workflow with visible value is easier to improve than a broad platform that nobody understands.
+### Tool Calls
 
-Finally, write an operating guide. Include setup steps, permissions, expected inputs, known limitations, escalation rules, and evaluation commands. A tool that only one person knows how to operate is not production-ready, even if it works well in a notebook.
+When the model decides to invoke a tool, the flow looks like this:
 
-## Common Mistakes to Avoid
+1. The model outputs a structured tool call — a JSON object with the tool name and its arguments.
+2. The host intercepts that output and forwards it to the appropriate MCP client as a `tools/call` request.
+3. The MCP client sends the request to the server over the transport layer.
+4. The server executes the action and returns a result (or an error).
+5. The host injects the result back into the conversation context so the model can reason about it.
 
-The first mistake is adopting this approach without a clear owner. AI work crosses product, engineering, legal, security, and operations. If nobody owns the workflow, decisions become fragmented. Assign an owner who can prioritize the use case, gather feedback, and decide when the system is good enough to expand.
+The whole round-trip is synchronous from the model's perspective — it "sees" the result before generating its next token.
 
-The second mistake is trusting polished output. Large language models are good at sounding confident. That does not mean the answer is grounded. Require citations, retrieved evidence, tests, schemas, or human review when the task has real consequences. The review process should be designed before the system is widely used.
+## MCP Server Examples
 
-The third mistake is hiding uncertainty. If the system is missing context, blocked by permissions, or making an assumption, the user should see that. A clear refusal or a request for more information is better than a fabricated answer. This is especially important in AI agents, tool use, memory, orchestration, planning, and autonomous workflows; AI tools, developer productivity, automation platforms, and practical AI workflows because small errors can cascade through technical decisions.
+The MCP ecosystem already has a solid catalog of community and official servers. Here are a few worth knowing:
 
-The fourth mistake is ignoring cost and latency until late. Token usage, tool calls, retries, and long context windows can become expensive. Measure cost per successful task, not only cost per model call. A cheaper model that requires repeated human cleanup may be more expensive than a stronger model with fewer failures.
+**Filesystem** (`@modelcontextprotocol/server-filesystem`) — Exposes read and write access to directories on the local machine. Useful for letting Claude edit files during an agentic session.
 
-The fifth mistake is skipping change management. Users need to know what the system is for, when to trust it, and how to report problems. Good rollout includes examples, office hours, documentation, and a feedback loop. Adoption is a product problem, not only an engineering problem.
+**GitHub** (`@modelcontextprotocol/server-github`) — Lists repositories, reads files, creates and comments on issues, opens pull requests. One of the most widely used servers in the ecosystem.
 
-## Recommended Stack and Workflow
+**PostgreSQL** (`@modelcontextprotocol/server-postgres`) — Connects to a Postgres database. The model can inspect schemas, run read-only queries (by default), and navigate table relationships.
 
-A strong stack for this does not have to be complicated. Begin with a stable interface, a small set of trusted context sources, a reliable model or tool provider, and a visible review step. Add orchestration only when the workflow genuinely needs multiple steps or tool calls.
+**Brave Search** (`@modelcontextprotocol/server-brave-search`) — Gives the model access to live web search results. Useful when you need current information that falls outside the model's training data.
 
-For context, prefer sources that are maintained as part of normal work: repositories, docs, tickets, runbooks, dashboards, and customer records with appropriate access controls. Stale context creates stale answers. If the knowledge base is not maintained, retrieval will not save the system.
+**Slack** (`@modelcontextprotocol/server-slack`) — Reads channel history, lists members, posts messages. Makes it practical to build agents that participate in team communication.
 
-For model selection, test more than one option. Compare quality, latency, cost, context length, structured output support, tool calling behavior, privacy terms, and operational fit. The best model for drafting a document may not be the best model for code repair, classification, or high-volume summarization.
+The full list is maintained at [modelcontextprotocol.io](https://modelcontextprotocol.io/servers) and grows quickly. At the time of writing there are over 150 community servers covering everything from Notion to AWS to local SQLite files.
 
-For workflow control, use typed inputs and outputs. JSON schemas, templates, checklists, and approval forms make results easier to validate. They also help users understand what the system can do. Free-form chat is useful for exploration, but production workflows benefit from structure.
+## Building an MCP Server
 
-For monitoring, capture prompt versions, retrieval hits, model names, tool calls, latency, token usage, user edits, and final outcomes. These records make it possible to debug quality issues and defend decisions later. Monitoring also helps teams decide when a prompt needs a small change and when the workflow needs a redesign.
+Building your own MCP server is straightforward. Anthropic publishes official SDKs for TypeScript and Python. Here is a minimal TypeScript server that exposes a single tool — fetching the current weather for a given city:
 
-## Decision Checklist
+```typescript
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
 
-Use a decision checklist before you invest deeply. The checklist should force the team to connect the technology to a measurable workflow. For this topic, the most useful criteria are usually workflow fit, output quality, integration effort, operating cost, security posture, and long-term maintainability.
+const server = new Server(
+  { name: "weather-server", version: "1.0.0" },
+  { capabilities: { tools: {} } }
+);
 
-Ask these questions before adoption:
+// Advertise the tools this server exposes
+server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  tools: [
+    {
+      name: "get_weather",
+      description: "Fetch current weather for a city",
+      inputSchema: {
+        type: "object",
+        properties: {
+          city: { type: "string", description: "City name" },
+        },
+        required: ["city"],
+      },
+    },
+  ],
+}));
 
-- What user job will this improve?
-- What evidence shows that the current workflow is slow, expensive, or error-prone?
-- What context does the system need, and who owns that context?
-- What actions can the system take, and which actions require approval?
-- What data must never be sent to a third-party service?
-- How will we measure completion rate, tool error rate, human intervention rate, step count, cost per task, and recovery success; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership?
-- What happens when the model is uncertain or wrong?
-- Who reviews failures and improves the workflow?
-- What is the rollback plan if quality drops?
+// Handle tool invocations
+server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  if (request.params.name !== "get_weather") {
+    throw new Error(`Unknown tool: ${request.params.name}`);
+  }
 
-The answers do not need to be perfect at the start. They do need to be explicit. Explicit assumptions can be tested. Hidden assumptions become production incidents, budget surprises, or tools that nobody uses.
+  const city = String(request.params.arguments?.city ?? "");
+  // In production, call a real weather API here
+  const temp = Math.round(15 + Math.random() * 20);
 
-A good decision also includes a stop rule. Decide what result would make the team pause or abandon the rollout. This protects the organization from continuing an AI project simply because it is already in motion.
+  return {
+    content: [
+      {
+        type: "text",
+        text: `Current weather in ${city}: ${temp}°C, partly cloudy.`,
+      },
+    ],
+  };
+});
+
+// Connect over stdio
+const transport = new StdioServerTransport();
+await server.connect(transport);
+```
+
+To register this server with Claude Desktop, add it to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "weather": {
+      "command": "node",
+      "args": ["/path/to/weather-server/dist/index.js"]
+    }
+  }
+}
+```
+
+Restart Claude Desktop and the `get_weather` tool is now available in every conversation. The model can call it autonomously when it decides weather information is relevant, or you can invoke it explicitly.
+
+The Python SDK follows the same pattern using FastMCP, a thin decorator-based wrapper that reduces the boilerplate even further:
+
+```python
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("weather-server")
+
+@mcp.tool()
+def get_weather(city: str) -> str:
+    """Fetch current weather for a city."""
+    # Call your real weather API here
+    return f"Current weather in {city}: 22°C, partly cloudy."
+
+if __name__ == "__main__":
+    mcp.run()
+```
+
+That is all it takes to publish a tool to any MCP-aware host. The decorator handles schema generation, argument validation, and protocol compliance automatically.
+
+## The MCP Ecosystem
+
+MCP support has spread quickly across the developer tool landscape. Here is where things stand as of early 2026:
+
+```mermaid
+quadrantChart
+    title MCP Host Ecosystem — Maturity vs Integration Depth
+    x-axis Low Integration --> High Integration
+    y-axis Early Adopter --> Mature Support
+    quadrant-1 Power Users
+    quadrant-2 Daily Drivers
+    quadrant-3 Watch This Space
+    quadrant-4 Growing Fast
+    Claude Desktop: [0.90, 0.95]
+    Cursor: [0.75, 0.85]
+    Zed: [0.60, 0.70]
+    VS Code: [0.55, 0.60]
+    Continue.dev: [0.50, 0.55]
+    Windsurf: [0.45, 0.50]
+    Custom Agents: [0.80, 0.40]
+```
+
+**Claude Desktop** is the reference host. Anthropic built it alongside the protocol, so support is deepest here. You get a GUI for managing server connections, built-in approval dialogs for tool calls, and the most reliable behavior when something goes wrong.
+
+**Cursor** added MCP support in late 2025. You configure servers in `.cursor/mcp.json` at the project root or in global settings. The integration works well for code-adjacent tools (filesystem, GitHub, databases) and is what I use day-to-day.
+
+**Zed** ships MCP support as part of its Agent Panel feature. Configuration lives in the project's `.zed/settings.json`. The implementation is solid and the team has been active in the MCP community.
+
+**VS Code** gained experimental MCP support through the Copilot agent mode. Configuration uses the standard `mcp.json` format but lives in the VS Code workspace settings. Expect this to mature significantly in 2026.
+
+**Continue.dev** is an open-source VS Code extension for AI-assisted coding that added MCP support early. If you self-host your AI backend, Continue plus a set of MCP servers is a compelling fully-open alternative to the commercial editors.
+
+Beyond editors, MCP is increasingly used in custom agent frameworks. If you are building an agent with LangChain, LlamaIndex, or a bare-metal approach using the Anthropic API directly, you can use the MCP client SDK to give your agent access to any MCP server without writing a custom integration for each one.
+
+## Security Considerations
+
+MCP gives models real access to real systems. That deserves real attention to security.
+
+**Principle of least privilege.** Each MCP server should expose only what the current use case requires. Your coding assistant does not need write access to your production database. Configure scopes carefully, especially for servers that can mutate data.
+
+**Prompt injection.** A malicious document or web page retrieved through an MCP resource could contain instructions designed to hijack the model's next action. This is a live research problem, not a solved one. Treat model-controlled tool calls with the same skepticism you would treat user-controlled inputs in a traditional application.
+
+**Tool approval.** Well-designed hosts ask for explicit user approval before executing destructive or irreversible tool calls. Claude Desktop does this by default. If you are building a custom host, build the approval step in from the start — retrofitting it later is harder than it sounds.
+
+**Credential management.** MCP servers often need credentials to access external services. Store those credentials in environment variables or a secrets manager, not hardcoded in the server config file. The `claude_desktop_config.json` file in particular is readable by other processes on the same machine.
+
+**Network exposure.** If you run a remote MCP server (HTTP+SSE transport), secure it behind authentication. An unauthenticated MCP server is an unauthenticated API endpoint — treat it accordingly.
+
+## MCP vs Direct API Integration
+
+Should you use MCP or just call external APIs directly from your agent code? The answer depends on your situation:
+
+```mermaid
+flowchart TD
+    A[Need to connect AI to external tools?] --> B{How many tools?}
+    B -->|1-2 tools, stable interface| C[Direct API call may be simpler]
+    B -->|3+ tools or changing requirements| D{Multiple AI hosts?}
+    D -->|Only one host| E{Will others use this integration?}
+    D -->|Yes — Cursor + Claude Desktop + custom agent| F[MCP is the right choice]
+    E -->|Yes — team or open source| F
+    E -->|No — single internal workflow| G{How often does the tool API change?}
+    G -->|Rarely| C
+    G -->|Frequently| H[MCP server isolates the change surface]
+    H --> F
+    C --> I[Ship it — revisit if you add hosts]
+    F --> J[Build the MCP server once, reuse everywhere]
+```
+
+**Use MCP when:**
+- You need the same tool available in multiple AI hosts
+- You are building tooling others will use (open source, team-wide)
+- You want the model to discover and compose tools dynamically
+- You want the security and approval model that MCP hosts provide
+
+**Skip MCP when:**
+- You have exactly one integration in a single-host application
+- The tool interface is trivially simple (one function, stable schema)
+- You are prototyping something you might throw away
+
+For anything beyond a prototype, MCP's compounding returns — one server, many hosts — almost always justify the upfront investment.
+
+## The Future of MCP
+
+The protocol is less than two years old and the trajectory is steep. A few things I am watching:
+
+**OAuth and remote authentication.** The working group is actively specifying how MCP servers should handle OAuth flows for user-specific credentials. Once that lands, building a server that connects to a user's personal GitHub or Google account without manual token setup becomes practical.
+
+**Sampling and model composition.** MCP includes a "sampling" capability that lets servers request model completions from the host. This opens the door to server-side AI that composes with the user's chosen model, rather than hard-coding a specific API call inside the server.
+
+**Agent-to-agent communication.** As multi-agent systems become more common, MCP provides a natural interface for one agent to expose capabilities to another. A research agent and a writing agent can both speak MCP without knowing anything about each other's internal implementation.
+
+**Enterprise adoption.** Several companies are already shipping internal MCP servers for their engineering platforms. The pattern is becoming: one MCP server per internal API, with standard authentication and access controls, available to every AI tool in the engineering stack. The consolidation effect is real.
+
+## Verdict
+
+MCP is not hype. It solves a genuine, compounding problem — the N×M integration mess — with a clean, open, well-specified standard. The protocol is simple enough that you can read the whole spec in a few hours. The SDK makes building a server a matter of hours, not days. And the ecosystem is already large enough that you can often find a maintained server for the tool you need without writing anything from scratch.
+
+If you are building AI tooling in 2026, MCP should be part of your vocabulary. More than that, it should probably be part of your architecture. The question is not whether the protocol is worth learning — it is. The question is which of your existing integrations to migrate first.
+
+I started with the GitHub server. You might start with your database or your internal documentation. Either way, start.
+
+---
 
 ## FAQ
 
-### Is this only for advanced AI teams?
+### Does MCP only work with Claude?
 
-No. The concepts are useful for small teams as well, but the implementation should match the team's maturity. A small team can start with a narrow workflow, manual review, and simple logs. A larger organization may need policy controls, shared evaluation infrastructure, and formal approval paths.
+No. MCP is an open protocol. Any AI host can implement MCP client support, and any service can implement an MCP server. Cursor, Zed, VS Code, and a growing list of custom agents all support MCP. The only requirement is that both sides implement the spec — the specific model or vendor is irrelevant.
 
-### What is the biggest risk?
+### How is MCP different from OpenAI's function calling?
 
-The biggest risk is not that the model makes one obvious mistake. The bigger risk is that a workflow quietly produces plausible but wrong output at scale. This is why evaluation, review, and monitoring matter. Treat AI output as work that needs quality control, not as magic.
+OpenAI's function calling is a feature of the OpenAI API — it defines how a model signals that it wants to call a function and how results are returned. MCP operates at a different layer: it is a transport protocol that defines how the hosting application discovers and calls external tools. You can use MCP with function calling or tool use from any provider. They solve adjacent problems, not the same one.
 
-### How long does adoption take?
+### Can I run MCP servers in production, or is this only for local dev?
 
-A useful prototype can often be built quickly, but production adoption takes longer because teams need permissions, evaluation, documentation, and user feedback. Plan for iteration. The first version should teach you which assumptions were wrong.
+Both. The stdio transport is ideal for local tools (filesystem, local databases, dev servers). The HTTP+SSE transport is designed for remote, production-grade servers. Several companies are already running production MCP servers behind authenticated endpoints. The protocol supports it; the security practices around it are still maturing.
 
-### Should we build or buy?
+### Is there a registry of community MCP servers?
 
-Buy when the workflow is common, the vendor integrates with your stack, and the risk profile is acceptable. Build when the workflow depends on proprietary context, custom tools, or differentiated product behavior. Many teams use a hybrid approach: buy model access or infrastructure, then build the workflow layer themselves.
+Yes. The official list lives at [modelcontextprotocol.io/servers](https://modelcontextprotocol.io/servers). There are also community curations on GitHub (search "awesome-mcp-servers") with additional context on quality and maintenance status for each server.
 
-### How should success be measured?
+### How stable is the MCP spec? Should I worry about breaking changes?
 
-Measure outcomes rather than excitement. Good measures include completion rate, tool error rate, human intervention rate, step count, cost per task, and recovery success; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership. Add human review quality and user adoption data. If people try the system once and return to the old process, the rollout has not succeeded.
-
-## Final Takeaway
-
-This approach is valuable when it is connected to a real workflow, evaluated against real examples, and operated with clear boundaries. The winning teams will not be the ones with the longest list of AI tools. They will be the teams that turn AI into repeatable, observable, and trusted work.
-
-Start small, measure honestly, and improve the system with evidence. Use tool schemas, task queues, planners, memory stores, retrieval, sandboxed execution, approvals, traces, and evaluation harnesses; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations where they fit, but keep the focus on agent workflows that are useful, bounded, observable, and recoverable; clearer tool selection and workflows that save time without creating hidden risk. That is the difference between an impressive demo and a capability that keeps paying off after the novelty fades.
+The spec reached v1.0 in early 2025 and has been relatively stable since. Minor revisions have been additive rather than breaking. Anthropic has signaled a strong commitment to backward compatibility, similar to how the LSP was managed after it left Microsoft's hands. That said, features like OAuth and sampling are still being finalized, so if you are building on those specific capabilities, track the working group's progress before shipping to production.

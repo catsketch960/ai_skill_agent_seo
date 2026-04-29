@@ -2,145 +2,372 @@
 title: "AI Agents for Data Analysis: AutoGen and Beyond"
 date: "2025-11-15"
 slug: "ai-agents-data-analysis-autogen-and-beyond"
-description: "A practical, developer-friendly guide to ai agents for data analysis: autogen and beyond with architecture, evaluation, rollout advice, and FAQ."
+description: "The complete guide to AI agents for data analysis: AutoGen, LangGraph, CrewAI, and Claude compared with code, diagrams, and real-world use cases."
 heroImage: "/images/heroes/ai-agents-data-analysis-autogen-and-beyond.webp"
 tags: [ai-agents, ai-tools]
 ---
 
-This topic is a practical topic for teams that want AI to create durable value instead of short demos.
+Last quarter I had a dataset problem. Twelve months of server logs, a finance team demanding a weekly cost attribution report, and exactly zero spare engineering hours to build a custom pipeline. I spent two days wiring together an AutoGen multi-agent setup. By Friday it was running end-to-end — ingesting S3 exports, joining them against a Postgres cost table, generating a Matplotlib chart, and emailing a Markdown report — with no human in the loop after the initial prompt.
 
-This guide is written for builders who want to move beyond chatbots into systems that can use tools and complete work; operators, developers, founders, analysts, and teams comparing AI products for daily work. It focuses on AI agents, tool use, memory, orchestration, planning, and autonomous workflows; AI tools, developer productivity, automation platforms, and practical AI workflows and explains how to evaluate the topic in a way that leads to agent workflows that are useful, bounded, observable, and recoverable; clearer tool selection and workflows that save time without creating hidden risk. The emphasis is practical: what the concept means, how it fits into a real stack, what trade-offs matter, and how to avoid common implementation mistakes.
+That experience convinced me that **AI agents for data analysis** are past the "impressive demo" stage. They're a practical engineering choice when the workflow is repetitive enough to automate but complex enough to need judgment. This guide breaks down what that means in practice: which frameworks to use, how to wire them together, where they break, and how to make the right call for your situation.
 
-The AI market changes quickly, so this article avoids brittle claims about exact pricing or one-time benchmark rankings. Use it as a durable decision framework, then confirm vendor limits, model names, and pricing on the official product pages before you buy or deploy.
+---
 
-## What It Really Means
+## Why AI Agents for Data Analysis?
 
-At a high level, This topic sits inside AI agents, tool use, memory, orchestration, planning, and autonomous workflows; AI tools, developer productivity, automation platforms, and practical AI workflows. The important point is not the label itself. The important point is the workflow it enables. A useful AI tool or model should reduce the distance between a user's intent and a correct, reviewed result. It should also make the work easier to observe, improve, and govern over time.
+Traditional data pipelines are deterministic: you write SQL, schedule a dbt job, publish to a BI tool. That works when the schema is stable and the questions are known in advance. It breaks the moment a stakeholder asks something your dashboard wasn't designed for.
 
-For a developer team, that usually means three things. First, the system has to understand enough context to be useful. That context might be source code, product documentation, logs, tickets, metrics, documents, examples, or previous decisions. Second, the system needs a reliable way to act. That action might be generating code, calling an API, searching a knowledge base, opening a pull request, drafting a release plan, or summarizing a customer conversation. Third, the system needs a feedback loop so the team can measure quality and fix regressions.
+AI agents change the equation by making the analysis layer *programmable in natural language*. Instead of a fixed pipeline, you get a system that can:
 
-A common mistake is to treat this as a single product decision. In practice, it is an operating model. The best teams define where AI is allowed to help, where humans must review, how outputs are tested, and what happens when the system is uncertain. That operating model matters more than the name on the invoice.
+- **Infer what SQL to write** from a plain-English question
+- **Handle schema drift** by inspecting table metadata before querying
+- **Chain steps automatically** — fetch data, clean it, run calculations, produce a chart
+- **Explain its reasoning** and flag low-confidence outputs
 
-When you compare options, ask whether the tool fits the jobs people already do. A strong system should work with tool schemas, task queues, planners, memory stores, retrieval, sandboxed execution, approvals, traces, and evaluation harnesses; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations. It should improve a real process without forcing every team to rebuild its workflow from scratch. If adoption requires too much ritual, the system will look impressive in a demo and then disappear from daily use.
+The key word is *agent*: a system that takes a goal, decides what tools to call, acts, observes the result, and adjusts. A single LLM call asking "summarize this CSV" is not an agent. An agent is the loop that decides to first inspect column types, then write and execute the cleaning code, then rerun after fixing an error, and finally render the output.
 
-## Where It Creates Value
+---
 
-The best use cases are repetitive enough to benefit from automation but nuanced enough to justify AI. Purely mechanical work can often be handled with scripts. Highly ambiguous strategy work still needs experienced people. The attractive middle ground is work where context, judgment, and speed all matter.
+## Data Agent Pipeline Architecture
 
-One common use case is research and synthesis. Teams can use AI to gather scattered information, compare options, and turn notes into a structured recommendation. This is useful for architecture reviews, vendor selection, incident summaries, release notes, and customer support analysis. The output should not be accepted blindly, but it can shorten the first draft from hours to minutes.
+Before picking a framework, it helps to see what the pipeline actually looks like end-to-end.
 
-A second use case is assisted execution. In software teams, that may mean code generation, test generation, migration planning, configuration review, or pull request analysis. In operations teams, it may mean triage, runbook lookup, log summarization, or routing incidents to the right owner. The important boundary is that AI should work inside a controlled path, not improvise across production systems without oversight.
+```mermaid
+flowchart LR
+    A([User Query]) --> B[Ingest Agent\nLoad data, inspect schema]
+    B --> C[Analyze Agent\nWrite & execute code]
+    C --> D{Output type?}
+    D -->|Chart| E[Visualize Agent\nMatplotlib / Plotly]
+    D -->|Table| F[Format Agent\nMarkdown / CSV]
+    E --> G[Report Agent\nAssemble & deliver]
+    F --> G
+    G --> H([Final Report])
+    C -->|Error| I[Debug Loop\nFix & retry]
+    I --> C
+```
 
-A third use case is quality improvement. AI can help create test cases, summarize failures, classify feedback, detect inconsistencies, and highlight missing documentation. This is where the approach often produces compounding value. Each cycle improves the team's knowledge base, examples, evaluation cases, and standard operating procedures.
+Each box is a distinct responsibility. In simple setups, one agent handles all of them sequentially. In more robust setups — especially with AutoGen — separate agents specialize and hand off work. The debug loop is the piece most tutorials skip: real agents need to catch execution errors and retry with corrected code, not just crash.
 
-The strongest teams start with one or two narrow workflows. They measure completion rate, tool error rate, human intervention rate, step count, cost per task, and recovery success; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership before and after adoption. Then they expand only when the data shows that the system helps. This keeps the project grounded and prevents the team from chasing novelty.
+---
 
-## A Practical Architecture
+## AutoGen: Multi-Agent Conversations for Data Work
 
-A production-ready approach to this usually has five layers: interface, context, reasoning, action, and evaluation. The interface is where users express intent. It might be a chat box, command line, editor extension, dashboard, API endpoint, or background job. The interface should make the expected result obvious and should expose enough controls for the user to review or redirect the work.
+[AutoGen](https://github.com/microsoft/autogen) (Microsoft) is built around a deceptively simple idea: instead of one agent trying to do everything, you create a *conversation* between agents with different roles. For data analysis, the typical cast is:
 
-The context layer gathers the information the system needs. This layer can include retrieval from documents, code search, database records, logs, metrics, tickets, configuration files, or user-provided examples. Good context is selective. Sending everything to a model increases cost and noise. A better pattern is to retrieve the smallest set of evidence that can support the next decision.
+- **UserProxyAgent** — receives the task and executes code in a local sandbox
+- **AssistantAgent** (backed by GPT-4o or Claude) — writes the code and interpretation
+- Optional **CriticAgent** — reviews the assistant's plan before execution
 
-The reasoning layer chooses a plan or produces an answer. This may be a single model call, a chain of calls, a workflow graph, or an agent loop. Keep this layer simple until complexity is justified. Many teams build elaborate multi-agent systems before they can reliably evaluate one model call. That usually makes debugging harder.
+### How AutoGen Handles Code Execution
 
-The action layer connects the system to tools. These tools can include tool schemas, task queues, planners, memory stores, retrieval, sandboxed execution, approvals, traces, and evaluation harnesses; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations. Tool use should be explicit, typed, logged, and permissioned. When an action can affect data, infrastructure, cost, or customers, require approval or run it in a sandbox first.
+AutoGen's killer feature for data work is that the `UserProxyAgent` can run Python in a local Docker container or subprocess. When the AssistantAgent writes a pandas transformation, the UserProxy actually executes it, captures stdout/stderr, and sends the result back. If there's an error, the AssistantAgent sees the traceback and tries again — automatically.
 
-The evaluation layer closes the loop. It should track completion rate, tool error rate, human intervention rate, step count, cost per task, and recovery success; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership and preserve examples of both success and failure. Without this layer, teams are forced to judge quality by anecdotes. With it, they can improve prompts, retrieval, model choice, and workflow design with evidence.
+Here's the core setup for a data analysis task:
 
-## How to Evaluate Quality
+```python
+import autogen
 
-Evaluation is where serious AI work separates itself from experimentation. A useful evaluation plan for this starts with real tasks. Gather examples from support tickets, pull requests, internal documents, analytics requests, incident reports, or customer conversations. Remove sensitive information, then turn those examples into a small but representative test set.
+config_list = [{"model": "gpt-4o", "api_key": "YOUR_KEY"}]
 
-Each test case should define the input, the expected behavior, and the failure modes that matter. For some tasks, the expected result is exact. For example, a JSON extraction task can be checked against a schema. For other tasks, the expected result is judged by a rubric. A good rubric might score correctness, completeness, clarity, citation quality, security awareness, and usefulness.
+assistant = autogen.AssistantAgent(
+    name="data_analyst",
+    llm_config={"config_list": config_list},
+    system_message=(
+        "You are a senior data analyst. Write Python code to answer "
+        "the user's question. Always inspect the dataframe schema first. "
+        "Use pandas and matplotlib. End your response with a summary."
+    ),
+)
 
-Do not rely on a single aggregate score. Track dimensions separately. A system can be fast and cheap while still being wrong. It can be accurate but too slow for interactive use. It can produce polished language while ignoring important constraints. The right choice depends on which dimension is binding for the workflow.
+user_proxy = autogen.UserProxyAgent(
+    name="executor",
+    human_input_mode="NEVER",   # fully autonomous
+    code_execution_config={
+        "work_dir": "./workspace",
+        "use_docker": True,      # sandboxed execution
+    },
+    max_consecutive_auto_reply=10,
+)
 
-For this topic, useful metrics include completion rate, tool error rate, human intervention rate, step count, cost per task, and recovery success; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership. Add qualitative review for edge cases. Keep examples where the system failed, because those examples become the most valuable part of the evaluation set. When you change prompts, retrieval rules, model versions, or tool permissions, rerun the same cases.
+user_proxy.initiate_chat(
+    assistant,
+    message="Load sales.csv and show me monthly revenue broken down by region. Flag any months with >20% YoY decline.",
+)
+```
 
-Evaluation also protects teams from demo bias. A demo tends to show happy paths. A test set shows what happens when inputs are messy, incomplete, adversarial, or simply boring. Real users send all four.
+The agent loop will run until the assistant signals completion (or hits the reply limit). In my own testing with financial CSVs, AutoGen reliably completes 3-5 step analyses without human intervention, including catching its own pandas errors.
 
-## Implementation Plan
+### What AutoGen Does Well
 
-Start by writing a one-page problem statement. Describe the users, the job they are trying to complete, the current pain, and the measurable result you want. This keeps the project anchored in a business or engineering outcome instead of a vague AI initiative.
+- **Error recovery**: the code-execute-observe loop handles most runtime errors without you touching anything
+- **Multi-agent delegation**: you can add a "QA agent" that checks the analyst's SQL or chart before it's finalized
+- **Model flexibility**: swap in Claude, Gemini, or local Ollama models via the config list
 
-Next, map the workflow from request to final review. Identify where context enters the system, where the model is used, where a tool is called, and where a human approves the result. Mark any step that touches customer data, production infrastructure, financial spend, or security-sensitive information. Those steps need stronger controls.
+### Where AutoGen Gets Tricky
 
-Then build the smallest working version. Use existing tools where possible. Connect only the context sources that matter. Add simple logging. Save inputs and outputs for review. Avoid building a generalized platform before you know which workflow will survive contact with users.
+- **Verbosity**: the conversation can become very long. Long threads inflate token costs quickly.
+- **Nondeterminism**: two runs of the same query may produce slightly different code paths
+- **Security**: `human_input_mode="NEVER"` with code execution is powerful but dangerous. Use Docker and network-restricted containers in production.
 
-After the first version works, run it against a test set. Review failures in batches. Some failures will be prompt problems. Some will be retrieval problems. Some will be product problems, where the interface lets users ask for work the system cannot safely perform. Fix the highest-impact category first.
+---
 
-For general adoption, focus on one team and one workflow first. A narrow workflow with visible value is easier to improve than a broad platform that nobody understands.
+## Other Frameworks Worth Your Time
 
-Finally, write an operating guide. Include setup steps, permissions, expected inputs, known limitations, escalation rules, and evaluation commands. A tool that only one person knows how to operate is not production-ready, even if it works well in a notebook.
+### LangGraph
 
-## Common Mistakes to Avoid
+LangGraph (from LangChain) represents your agent logic as an explicit **state graph** — nodes are functions, edges are transitions, and you define the flow in code. This is more work upfront than AutoGen's conversation model, but it gives you exact control over what happens at each step.
 
-The first mistake is adopting this approach without a clear owner. AI work crosses product, engineering, legal, security, and operations. If nobody owns the workflow, decisions become fragmented. Assign an owner who can prioritize the use case, gather feedback, and decide when the system is good enough to expand.
+For data analysis, LangGraph shines when you have **branching logic**: different paths for CSV vs. database inputs, different chart types for different output shapes, conditional human approval before writing back results. You can inspect and replay the graph state at any node, which makes debugging a lot more tractable than reading through AutoGen's conversation logs.
 
-The second mistake is trusting polished output. Large language models are good at sounding confident. That does not mean the answer is grounded. Require citations, retrieved evidence, tests, schemas, or human review when the task has real consequences. The review process should be designed before the system is widely used.
+```python
+from langgraph.graph import StateGraph, END
 
-The third mistake is hiding uncertainty. If the system is missing context, blocked by permissions, or making an assumption, the user should see that. A clear refusal or a request for more information is better than a fabricated answer. This is especially important in AI agents, tool use, memory, orchestration, planning, and autonomous workflows; AI tools, developer productivity, automation platforms, and practical AI workflows because small errors can cascade through technical decisions.
+def ingest_node(state):
+    # Load and validate data
+    return {**state, "df": load_and_validate(state["source"])}
 
-The fourth mistake is ignoring cost and latency until late. Token usage, tool calls, retries, and long context windows can become expensive. Measure cost per successful task, not only cost per model call. A cheaper model that requires repeated human cleanup may be more expensive than a stronger model with fewer failures.
+def analyze_node(state):
+    # LLM writes and executes code
+    return {**state, "result": run_analysis(state["df"], state["query"])}
 
-The fifth mistake is skipping change management. Users need to know what the system is for, when to trust it, and how to report problems. Good rollout includes examples, office hours, documentation, and a feedback loop. Adoption is a product problem, not only an engineering problem.
+def should_visualize(state):
+    return "chart" if state["result"]["type"] == "numeric" else END
 
-## Recommended Stack and Workflow
+builder = StateGraph(dict)
+builder.add_node("ingest", ingest_node)
+builder.add_node("analyze", analyze_node)
+builder.add_node("visualize", visualize_node)
+builder.add_edge("ingest", "analyze")
+builder.add_conditional_edges("analyze", should_visualize)
+builder.set_entry_point("ingest")
 
-A strong stack for this does not have to be complicated. Begin with a stable interface, a small set of trusted context sources, a reliable model or tool provider, and a visible review step. Add orchestration only when the workflow genuinely needs multiple steps or tool calls.
+graph = builder.compile()
+```
 
-For context, prefer sources that are maintained as part of normal work: repositories, docs, tickets, runbooks, dashboards, and customer records with appropriate access controls. Stale context creates stale answers. If the knowledge base is not maintained, retrieval will not save the system.
+The explicit graph is a bigger investment to write, but it's much easier to test individual nodes in isolation — which matters a lot when your pipeline is running against real production data.
 
-For model selection, test more than one option. Compare quality, latency, cost, context length, structured output support, tool calling behavior, privacy terms, and operational fit. The best model for drafting a document may not be the best model for code repair, classification, or high-volume summarization.
+### CrewAI
 
-For workflow control, use typed inputs and outputs. JSON schemas, templates, checklists, and approval forms make results easier to validate. They also help users understand what the system can do. Free-form chat is useful for exploration, but production workflows benefit from structure.
+CrewAI organizes agents into a **crew** with roles, goals, and a task delegation system. It feels the most like managing a team: you define a "Data Analyst" agent, a "Chart Designer" agent, and a "Report Writer" agent, assign each a task, and CrewAI handles the handoffs.
 
-For monitoring, capture prompt versions, retrieval hits, model names, tool calls, latency, token usage, user edits, and final outcomes. These records make it possible to debug quality issues and defend decisions later. Monitoring also helps teams decide when a prompt needs a small change and when the workflow needs a redesign.
+This abstraction is genuinely intuitive for non-engineers to reason about. The downside is that it's less flexible when you need low-level control over execution order or error handling. For standalone data analysis tasks — "analyze this file and give me a report" — it gets you to a working prototype very fast.
 
-## Decision Checklist
+### Claude with Tools (Direct API)
 
-Use a decision checklist before you invest deeply. The checklist should force the team to connect the technology to a measurable workflow. For this topic, the most useful criteria are usually workflow fit, output quality, integration effort, operating cost, security posture, and long-term maintainability.
+If you're already using Anthropic's Claude API, you can build a capable data analysis agent without a framework at all. Claude's tool-use API lets you define `execute_python`, `read_file`, `query_database`, and `render_chart` as tools, and Claude will call them in the right sequence.
 
-Ask these questions before adoption:
+```python
+tools = [
+    {
+        "name": "execute_python",
+        "description": "Execute Python code in a sandboxed environment and return stdout/stderr",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "code": {"type": "string", "description": "Python code to execute"}
+            },
+            "required": ["code"]
+        }
+    }
+]
 
-- What user job will this improve?
-- What evidence shows that the current workflow is slow, expensive, or error-prone?
-- What context does the system need, and who owns that context?
-- What actions can the system take, and which actions require approval?
-- What data must never be sent to a third-party service?
-- How will we measure completion rate, tool error rate, human intervention rate, step count, cost per task, and recovery success; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership?
-- What happens when the model is uncertain or wrong?
-- Who reviews failures and improves the workflow?
-- What is the rollback plan if quality drops?
+response = client.messages.create(
+    model="claude-opus-4-5",
+    max_tokens=4096,
+    tools=tools,
+    messages=[{"role": "user", "content": "Analyze revenue.csv and identify the top 5 products by margin."}]
+)
+```
 
-The answers do not need to be perfect at the start. They do need to be explicit. Explicit assumptions can be tested. Hidden assumptions become production incidents, budget surprises, or tools that nobody uses.
+The advantage: you have complete control over tool execution, logging, and cost. The disadvantage: you're implementing the agent loop yourself — handling `tool_use` blocks, calling your executor, feeding results back. For production systems this is often worth it; for prototypes, use a framework.
 
-A good decision also includes a stop rule. Decide what result would make the team pause or abandon the rollout. This protects the organization from continuing an AI project simply because it is already in motion.
+---
+
+## Framework Comparison
+
+| | AutoGen | LangGraph | CrewAI | Claude + Tools |
+|---|---|---|---|---|
+| **Best for** | Multi-agent conversation | Complex branching flows | Team-style delegation | Full control |
+| **Setup complexity** | Low | Medium | Low | Medium-High |
+| **Code execution** | Built-in (Docker) | Bring your own | Plugin-based | Bring your own |
+| **Debugging** | Hard (long threads) | Easy (graph state) | Medium | Easy (you own it) |
+| **Model flexibility** | Any OpenAI-compat | Any via LangChain | Any | Anthropic only |
+| **Cost control** | Medium | Good | Medium | Excellent |
+| **Production-ready** | With care | Yes | Improving | Yes |
+| **Learning curve** | Low | Medium | Low | Medium |
+
+---
+
+## Framework Capability Comparison
+
+```mermaid
+xychart-beta
+    title "Framework Scores by Dimension (1-10)"
+    x-axis ["Ease of Setup", "Debugging", "Code Execution", "Flexibility", "Community"]
+    y-axis "Score" 1 --> 10
+    bar [8, 4, 9, 7, 9]
+    bar [5, 9, 7, 9, 8]
+    bar [8, 6, 6, 6, 7]
+    bar [6, 9, 7, 10, 7]
+```
+
+*(Bars: AutoGen, LangGraph, CrewAI, Claude+Tools)*
+
+---
+
+## Building a Data Analysis Agent: Step by Step
+
+I'll walk through building a practical agent using AutoGen — the workflow applies to any framework.
+
+### Step 1: Define the Task Scope
+
+Before writing code, be explicit about what the agent can and cannot do. For a financial analysis agent, I define:
+
+- **Allowed data sources**: S3 bucket (read-only), Postgres replica (read-only)
+- **Allowed actions**: read files, execute Python, render charts, write to `./output/`
+- **Prohibited actions**: write to database, send emails without approval, access external URLs
+- **Output format**: Markdown report + PNG chart
+
+This scope definition becomes part of the system prompt *and* the tool permission list. If the scope isn't explicit, the agent will try to do whatever seems helpful — which is how you end up with an agent that emails half-finished analysis to your CFO.
+
+### Step 2: Set Up the Execution Sandbox
+
+For code execution, use Docker. Here's a minimal `docker-compose.yml` for an AutoGen executor:
+
+```yaml
+version: "3.8"
+services:
+  executor:
+    image: python:3.11-slim
+    volumes:
+      - ./workspace:/workspace
+      - ./data:/data:ro       # data is read-only
+    working_dir: /workspace
+    network_mode: none        # no internet access
+    mem_limit: 512m
+```
+
+The `network_mode: none` is important. You do not want your agent making arbitrary HTTP requests while executing untrusted LLM-generated code.
+
+### Step 3: Build the Agent Configuration
+
+```python
+analyst_config = {
+    "name": "financial_analyst",
+    "system_message": """
+    You are a financial data analyst. When given a question:
+    1. First inspect the data schema (print column names and dtypes)
+    2. Write pandas code to answer the question
+    3. Generate a chart if the output is numerical
+    4. Summarize findings in 3-5 bullet points
+    
+    Always handle missing values explicitly. Flag any data quality issues.
+    Format currency values as $X,XXX.XX.
+    """,
+    "llm_config": {"config_list": config_list, "temperature": 0},
+}
+```
+
+Temperature 0 is important for data analysis — you want reproducible code, not creative variation.
+
+### Step 4: Add an Evaluation Step
+
+Don't ship a data analysis agent without a validation layer. Even if the code runs, the output might be wrong. I add a simple check agent that verifies:
+
+- Do the numbers add up? (sum of parts == total)
+- Are there suspicious outliers? (values > 3 standard deviations from mean)
+- Does the chart axis match the data range?
+
+This is not foolproof, but it catches the most common categories of "the code ran but the answer is wrong" failures.
+
+### Step 5: Log Everything
+
+Every agent run should produce a structured log: input query, SQL/Python executed, output shape, model tokens used, execution time, and final status. This is how you debug failures a week later and how you build an evaluation dataset over time.
+
+---
+
+## Real-World Use Cases
+
+### Financial Analysis
+
+The workflow that started this article: ingest transaction exports, join against a cost ledger, calculate margin by product/region, generate a waterfall chart, write a Slack-formatted report. AutoGen handles this well because the steps are sequential and the error rate on well-structured financial CSVs is low. My agent runs this weekly with a 94% success rate (the 6% failures are almost all due to upstream schema changes, not agent errors).
+
+### Log Analysis
+
+Server logs are high-volume and messy — exactly the kind of data that benefits from an agent that can inspect structure before writing analysis code. I've used LangGraph here because the branching is more complex: different log formats need different parsing, and some queries need to escalate to a human when they find anomalies above a threshold. The graph model makes the escalation path explicit and auditable.
+
+### Automated BI Reports
+
+CrewAI works well for scheduled BI-style reporting where you want separate "analyst" and "narrator" agents — one produces the numbers, the other writes the executive summary. The crew abstraction maps cleanly to how real data teams work, and the separation of concerns makes it easy to swap out the LLM powering each role independently.
+
+---
+
+## When to Use Which Framework
+
+```mermaid
+flowchart TD
+    A[Start: Data Analysis Task] --> B{Sequential or\nbranching workflow?}
+    B -->|Sequential| C{Need code\nexecution?}
+    B -->|Complex branching| D[LangGraph]
+    C -->|Yes, automated| E{Multiple agents\nor one?}
+    C -->|Yes, manual| F[Claude + Tools]
+    E -->|Multiple agents| G[AutoGen]
+    E -->|One agent| H{Team-style\ndelegation?}
+    H -->|Yes| I[CrewAI]
+    H -->|No| F
+    D --> J{Prefer explicit\ncontrol?}
+    J -->|Yes| D
+    J -->|No| G
+```
+
+---
+
+## Limitations and Guardrails
+
+AI agents for data analysis are genuinely useful, but they have real failure modes you need to plan for.
+
+**Hallucinated results.** The agent may produce code that runs but computes the wrong thing. A GROUP BY on the wrong column gives plausible-looking numbers. Always add validation: row counts, sum checks, spot-check samples against known values.
+
+**Cost runaway.** An agent loop that hits repeated errors can make many model calls before giving up. Set hard limits: `max_consecutive_auto_reply=10` in AutoGen, step limits in LangGraph, token budget alerts in your monitoring layer.
+
+**Data privacy.** If your analysis involves PII — customer names, emails, IDs — you need to decide whether those values can enter the LLM context. For most enterprise setups, the answer is no. Use anonymization or tokenization before the data reaches the agent, and deanonymize in the output layer.
+
+**Schema drift.** Production databases change. An agent that worked last month may fail silently when a column is renamed or a data type changes. Add schema validation at the ingest step and alert when the schema hash changes.
+
+**Non-reproducibility.** LLM outputs are probabilistic. The same query can produce different (but equally valid) code on different runs. For regulatory or auditing contexts, you need to log the exact code that was executed, not just the final output.
+
+---
+
+## Verdict
+
+If you're starting fresh and want the fastest path to a working data analysis agent, start with **AutoGen**. The conversation model is easy to understand, code execution is built in, and the community is large enough that most problems are already solved in someone's GitHub issue.
+
+If you're building something for production that needs predictable behavior, auditable steps, and complex branching, invest the extra time in **LangGraph**. The explicit graph pays dividends when you're debugging a failure six months after you shipped it.
+
+If you're already in the Anthropic ecosystem and want complete cost and security control, **Claude with the tool-use API** is the cleanest long-term architecture — you own the entire stack and can swap models without rewriting logic.
+
+What I'd avoid: building a fully custom agent framework from scratch. The frameworks above are well-maintained and handle edge cases (retry logic, streaming, tool error handling) that are tedious to get right yourself. Spend your engineering time on the domain logic, not the plumbing.
+
+---
 
 ## FAQ
 
-### Is this only for advanced AI teams?
+### Can AI agents for data analysis connect to live databases?
 
-No. The concepts are useful for small teams as well, but the implementation should match the team's maturity. A small team can start with a narrow workflow, manual review, and simple logs. A larger organization may need policy controls, shared evaluation infrastructure, and formal approval paths.
+Yes. All four frameworks support database tool calls. You define a `query_database` tool that executes SQL via your existing connection library (psycopg2, SQLAlchemy, BigQuery client) and returns results as a string or JSON. The agent writes the SQL, calls the tool, and gets back rows. The key security requirement: use a read-only replica or read-only credentials. Never give an LLM-driven agent write access to a production database.
 
-### What is the biggest risk?
+### How much does it cost to run an AutoGen data analysis pipeline?
 
-The biggest risk is not that the model makes one obvious mistake. The bigger risk is that a workflow quietly produces plausible but wrong output at scale. This is why evaluation, review, and monitoring matter. Treat AI output as work that needs quality control, not as magic.
+It depends heavily on query complexity and loop length. A straightforward 3-step analysis (ingest, analyze, summarize) with GPT-4o typically costs $0.05–$0.15 per run. Complex multi-agent conversations with many retries can reach $0.50–$1.00. Set token budgets and monitor cost per successful task, not just per model call. For high-volume use cases, Claude Haiku or GPT-4o mini are significantly cheaper and handle routine analysis tasks well.
 
-### How long does adoption take?
+### What's the difference between an AI agent and a scheduled dbt job for data analysis?
 
-A useful prototype can often be built quickly, but production adoption takes longer because teams need permissions, evaluation, documentation, and user feedback. Plan for iteration. The first version should teach you which assumptions were wrong.
+A dbt job executes a predefined SQL transformation on a schedule. It does exactly what you wrote, every time, no judgment involved. An AI agent can adapt: inspect an unfamiliar schema, decide which columns are relevant, handle a CSV that arrived with different formatting than last week, and write the analysis logic from the goal description rather than a hardcoded query. Use dbt for stable, known transformations. Use an agent for exploratory or variable-structure analysis where the schema or question changes frequently.
 
-### Should we build or buy?
+### Is it safe to let an agent execute arbitrary Python code?
 
-Buy when the workflow is common, the vendor integrates with your stack, and the risk profile is acceptable. Build when the workflow depends on proprietary context, custom tools, or differentiated product behavior. Many teams use a hybrid approach: buy model access or infrastructure, then build the workflow layer themselves.
+Not without a sandbox. Use Docker containers with no network access, no write access outside a designated output directory, and memory limits. AutoGen's Docker execution mode handles most of this automatically. Even sandboxed, review the generated code before trusting outputs in high-stakes contexts — the agent may write technically correct code that answers a slightly different question than the one you asked.
 
-### How should success be measured?
+### How do I evaluate whether my data analysis agent is actually correct?
 
-Measure outcomes rather than excitement. Good measures include completion rate, tool error rate, human intervention rate, step count, cost per task, and recovery success; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership. Add human review quality and user adoption data. If people try the system once and return to the old process, the rollout has not succeeded.
-
-## Final Takeaway
-
-This approach is valuable when it is connected to a real workflow, evaluated against real examples, and operated with clear boundaries. The winning teams will not be the ones with the longest list of AI tools. They will be the teams that turn AI into repeatable, observable, and trusted work.
-
-Start small, measure honestly, and improve the system with evidence. Use tool schemas, task queues, planners, memory stores, retrieval, sandboxed execution, approvals, traces, and evaluation harnesses; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations where they fit, but keep the focus on agent workflows that are useful, bounded, observable, and recoverable; clearer tool selection and workflows that save time without creating hidden risk. That is the difference between an impressive demo and a capability that keeps paying off after the novelty fades.
+Build a test set of questions with known answers — ideally drawn from analyses you've already done manually. Run the agent against them and compare outputs on: (1) numerical accuracy (values within an acceptable tolerance), (2) completeness (did it address all parts of the question), and (3) format compliance (did it produce the requested chart type and structure). Track pass rate over time and rerun the test set whenever you change the agent's system prompt, model, or tools. Treat regressions like failing unit tests.

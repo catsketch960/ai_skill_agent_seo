@@ -2,145 +2,397 @@
 title: "Getting Started with Harness CI/CD and AI Features"
 date: "2026-02-04"
 slug: "getting-started-harness-cicd-ai-features"
-description: "A practical, developer-friendly guide to getting started with harness ci/cd and ai features with architecture, evaluation, rollout advice, and FAQ."
+description: "Step-by-step tutorial for getting started with Harness CI/CD: install the Delegate, connect repos, build pipelines, and activate AI features."
 heroImage: "/images/heroes/getting-started-harness-cicd-ai-features.webp"
 tags: [harness, ai-tools]
 ---
 
-This topic is easiest to understand when it is treated as a workflow instead of a collection of disconnected features.
+I remember the afternoon I first opened the Harness dashboard: tabs everywhere, YAML files that looked like alien scripture, and an error from the Delegate that gave me nothing useful to Google. Two hours in, I had a working pipeline. Six hours in, I had AI-assisted failure analysis turned on and my on-call rotation had already gotten quieter.
 
-This guide is written for DevOps teams, platform engineers, engineering managers, and developers who ship production software; operators, developers, founders, analysts, and teams comparing AI products for daily work. It focuses on software delivery, CI/CD automation, release governance, and cloud cost control; AI tools, developer productivity, automation platforms, and practical AI workflows and explains how to evaluate the topic in a way that leads to faster releases with lower operational risk; clearer tool selection and workflows that save time without creating hidden risk. The emphasis is practical: what the concept means, how it fits into a real stack, what trade-offs matter, and how to avoid common implementation mistakes.
+This tutorial walks you through exactly that journey — from zero to a full CI/CD pipeline with Harness AI Features enabled — in a way that actually makes sense the first time you read it.
 
-The AI market changes quickly, so this article avoids brittle claims about exact pricing or one-time benchmark rankings. Use it as a durable decision framework, then confirm vendor limits, model names, and pricing on the official product pages before you buy or deploy.
+Getting started with Harness CI/CD is easier than it looks from the outside, but only if you follow steps in the right order. Skip the Delegate setup and nothing works. Wire up AI features before your pipeline is stable and you'll be debugging two systems at once. This guide sequences everything so each step builds cleanly on the last.
 
-## What It Really Means
+---
 
-At a high level, This topic sits inside software delivery, CI/CD automation, release governance, and cloud cost control; AI tools, developer productivity, automation platforms, and practical AI workflows. The important point is not the label itself. The important point is the workflow it enables. A useful AI tool or model should reduce the distance between a user's intent and a correct, reviewed result. It should also make the work easier to observe, improve, and govern over time.
+## Prerequisites
 
-For a developer team, that usually means three things. First, the system has to understand enough context to be useful. That context might be source code, product documentation, logs, tickets, metrics, documents, examples, or previous decisions. Second, the system needs a reliable way to act. That action might be generating code, calling an API, searching a knowledge base, opening a pull request, drafting a release plan, or summarizing a customer conversation. Third, the system needs a feedback loop so the team can measure quality and fix regressions.
+Before you touch the Harness UI, make sure the following are in place:
 
-A common mistake is to treat this as a single product decision. In practice, it is an operating model. The best teams define where AI is allowed to help, where humans must review, how outputs are tested, and what happens when the system is uncertain. That operating model matters more than the name on the invoice.
+- **A Harness account** — Free tier works for this tutorial. Sign up at [app.harness.io](https://app.harness.io).
+- **A Kubernetes cluster or VM** — The Harness Delegate runs here. A local `kind` or `minikube` cluster is fine for learning.
+- **`kubectl` installed and configured** — You'll apply the Delegate manifest from your terminal.
+- **Docker installed** — Used in the CI pipeline build step.
+- **A GitHub (or GitLab/Bitbucket) account** — To connect a source repository.
+- **A Docker Hub or ECR account** — For pushing built container images.
 
-When you compare options, ask whether the tool fits the jobs people already do. A strong system should work with pipelines, source control, build runners, deployment targets, observability tools, feature flags, policy checks, and incident workflows; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations. It should improve a real process without forcing every team to rebuild its workflow from scratch. If adoption requires too much ritual, the system will look impressive in a demo and then disappear from daily use.
+If you're running Kubernetes locally, verify your cluster is healthy before proceeding:
 
-## Where It Creates Value
+```bash
+kubectl cluster-info
+kubectl get nodes
+```
 
-The best use cases are repetitive enough to benefit from automation but nuanced enough to justify AI. Purely mechanical work can often be handled with scripts. Highly ambiguous strategy work still needs experienced people. The attractive middle ground is work where context, judgment, and speed all matter.
+You should see at least one node in `Ready` state. If not, fix that first — the Delegate will install but immediately fail to register.
 
-One common use case is research and synthesis. Teams can use AI to gather scattered information, compare options, and turn notes into a structured recommendation. This is useful for architecture reviews, vendor selection, incident summaries, release notes, and customer support analysis. The output should not be accepted blindly, but it can shorten the first draft from hours to minutes.
+---
 
-A second use case is assisted execution. In software teams, that may mean code generation, test generation, migration planning, configuration review, or pull request analysis. In operations teams, it may mean triage, runbook lookup, log summarization, or routing incidents to the right owner. The important boundary is that AI should work inside a controlled path, not improvise across production systems without oversight.
+## Step 1: Create Your Harness Account and First Project
 
-A third use case is quality improvement. AI can help create test cases, summarize failures, classify feedback, detect inconsistencies, and highlight missing documentation. This is where the approach often produces compounding value. Each cycle improves the team's knowledge base, examples, evaluation cases, and standard operating procedures.
+Head to [app.harness.io](https://app.harness.io) and sign up. The free plan includes unlimited pipelines with capped build minutes — plenty for getting started.
 
-The strongest teams start with one or two narrow workflows. They measure deployment frequency, lead time, failed deployment rate, rollback time, build duration, and cloud spend variance; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership before and after adoption. Then they expand only when the data shows that the system helps. This keeps the project grounded and prevents the team from chasing novelty.
+Once you're in:
 
-## A Practical Architecture
+1. Click **Projects** in the left nav, then **+ New Project**.
+2. Give it a name: I'll use `demo-shop` throughout this tutorial.
+3. Choose your organization (the default org is fine) and click **Save and Continue**.
+4. Skip the module selection for now — you can enable CI and CD individually from the project dashboard.
 
-A production-ready approach to this usually has five layers: interface, context, reasoning, action, and evaluation. The interface is where users express intent. It might be a chat box, command line, editor extension, dashboard, API endpoint, or background job. The interface should make the expected result obvious and should expose enough controls for the user to review or redirect the work.
+The first thing Harness asks after project creation is whether you want to set up a pipeline using the wizard. Skip it. We're doing this manually so you understand each piece.
 
-The context layer gathers the information the system needs. This layer can include retrieval from documents, code search, database records, logs, metrics, tickets, configuration files, or user-provided examples. Good context is selective. Sending everything to a model increases cost and noise. A better pattern is to retrieve the smallest set of evidence that can support the next decision.
+---
 
-The reasoning layer chooses a plan or produces an answer. This may be a single model call, a chain of calls, a workflow graph, or an agent loop. Keep this layer simple until complexity is justified. Many teams build elaborate multi-agent systems before they can reliably evaluate one model call. That usually makes debugging harder.
+## Step 2: Install the Harness Delegate
 
-The action layer connects the system to tools. These tools can include pipelines, source control, build runners, deployment targets, observability tools, feature flags, policy checks, and incident workflows; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations. Tool use should be explicit, typed, logged, and permissioned. When an action can affect data, infrastructure, cost, or customers, require approval or run it in a sandbox first.
+The Delegate is the agent that runs inside your infrastructure. Every pipeline step executes through it — Harness never reaches directly into your network. This is the most important concept in the whole platform.
 
-The evaluation layer closes the loop. It should track deployment frequency, lead time, failed deployment rate, rollback time, build duration, and cloud spend variance; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership and preserve examples of both success and failure. Without this layer, teams are forced to judge quality by anecdotes. With it, they can improve prompts, retrieval, model choice, and workflow design with evidence.
+From your project, navigate to **Project Settings → Delegates → + New Delegate**.
 
-## How to Evaluate Quality
+Choose **Kubernetes** as the Delegate type. Harness generates a YAML manifest. Download it.
 
-Evaluation is where serious AI work separates itself from experimentation. A useful evaluation plan for this starts with real tasks. Gather examples from support tickets, pull requests, internal documents, analytics requests, incident reports, or customer conversations. Remove sensitive information, then turn those examples into a small but representative test set.
+Apply the manifest:
 
-Each test case should define the input, the expected behavior, and the failure modes that matter. For some tasks, the expected result is exact. For example, a JSON extraction task can be checked against a schema. For other tasks, the expected result is judged by a rubric. A good rubric might score correctness, completeness, clarity, citation quality, security awareness, and usefulness.
+```bash
+kubectl apply -f harness-delegate.yml
+```
 
-Do not rely on a single aggregate score. Track dimensions separately. A system can be fast and cheap while still being wrong. It can be accurate but too slow for interactive use. It can produce polished language while ignoring important constraints. The right choice depends on which dimension is binding for the workflow.
+Watch the pod come up:
 
-For this topic, useful metrics include deployment frequency, lead time, failed deployment rate, rollback time, build duration, and cloud spend variance; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership. Add qualitative review for edge cases. Keep examples where the system failed, because those examples become the most valuable part of the evaluation set. When you change prompts, retrieval rules, model versions, or tool permissions, rerun the same cases.
+```bash
+kubectl get pods -n harness-delegate -w
+```
 
-Evaluation also protects teams from demo bias. A demo tends to show happy paths. A test set shows what happens when inputs are messy, incomplete, adversarial, or simply boring. Real users send all four.
+Within two to three minutes you should see the pod reach `Running` state. Back in the Harness UI, the Delegate will appear as **Connected** with a green indicator.
 
-## Implementation Plan
+If the Delegate stays in `Pending` or the pod restarts repeatedly, check its logs:
 
-Start by writing a one-page problem statement. Describe the users, the job they are trying to complete, the current pain, and the measurable result you want. This keeps the project anchored in a business or engineering outcome instead of a vague AI initiative.
+```bash
+kubectl logs -n harness-delegate -l app=harness-delegate --tail=100
+```
 
-Next, map the workflow from request to final review. Identify where context enters the system, where the model is used, where a tool is called, and where a human approves the result. Mark any step that touches customer data, production infrastructure, financial spend, or security-sensitive information. Those steps need stronger controls.
+The most common problems at this stage are insufficient cluster resources (the Delegate needs at least 0.5 CPU and 768Mi memory) and network policies blocking outbound HTTPS to `app.harness.io`.
 
-Then build the smallest working version. Use existing tools where possible. Connect only the context sources that matter. Add simple logging. Save inputs and outputs for review. Avoid building a generalized platform before you know which workflow will survive contact with users.
+Here is how the Delegate fits into the overall Harness architecture:
 
-After the first version works, run it against a test set. Review failures in batches. Some failures will be prompt problems. Some will be retrieval problems. Some will be product problems, where the interface lets users ask for work the system cannot safely perform. Fix the highest-impact category first.
+```mermaid
+graph TD
+    A[Harness SaaS\napp.harness.io] -->|Pipeline triggers| B[Harness Delegate\nin your cluster]
+    B -->|Pulls code| C[GitHub / GitLab]
+    B -->|Builds & pushes image| D[Docker Hub / ECR]
+    B -->|Deploys| E[Kubernetes Cluster\nor Cloud VMs]
+    B -->|Sends logs & metrics| A
+    F[You / Pipeline YAML] -->|Defines steps| A
+```
 
-For tutorial-style adoption, create a thin vertical slice first. The slice should include real input, one useful action, visible review, and a measurable output. That is enough to learn without building unnecessary platform layers.
+The Delegate is the only component that needs outbound internet access. Your cluster nodes do not need to be publicly reachable.
 
-Finally, write an operating guide. Include setup steps, permissions, expected inputs, known limitations, escalation rules, and evaluation commands. A tool that only one person knows how to operate is not production-ready, even if it works well in a notebook.
+---
 
-## Common Mistakes to Avoid
+## Step 3: Create Connectors
 
-The first mistake is adopting this approach without a clear owner. AI work crosses product, engineering, legal, security, and operations. If nobody owns the workflow, decisions become fragmented. Assign an owner who can prioritize the use case, gather feedback, and decide when the system is good enough to expand.
+Connectors store credentials and tell Harness how to reach external systems. You need two before building a pipeline: a source code connector and a Docker registry connector.
 
-The second mistake is trusting polished output. Large language models are good at sounding confident. That does not mean the answer is grounded. Require citations, retrieved evidence, tests, schemas, or human review when the task has real consequences. The review process should be designed before the system is widely used.
+### GitHub Connector
 
-The third mistake is hiding uncertainty. If the system is missing context, blocked by permissions, or making an assumption, the user should see that. A clear refusal or a request for more information is better than a fabricated answer. This is especially important in software delivery, CI/CD automation, release governance, and cloud cost control; AI tools, developer productivity, automation platforms, and practical AI workflows because small errors can cascade through technical decisions.
+1. Go to **Project Settings → Connectors → + New Connector → Code Repositories → GitHub**.
+2. Name it `github-demo-shop`.
+3. Choose **Account** scope (lets all repos in the account use this connector).
+4. Authentication: select **Personal Access Token**. Create a GitHub PAT with `repo` and `admin:repo_hook` scopes, paste it in.
+5. Connectivity mode: **Connect through Delegate**. Select the Delegate you just installed.
+6. Click **Save and Test** — Harness will verify the connection through the Delegate.
 
-The fourth mistake is ignoring cost and latency until late. Token usage, tool calls, retries, and long context windows can become expensive. Measure cost per successful task, not only cost per model call. A cheaper model that requires repeated human cleanup may be more expensive than a stronger model with fewer failures.
+### Docker Hub Connector
 
-The fifth mistake is skipping change management. Users need to know what the system is for, when to trust it, and how to report problems. Good rollout includes examples, office hours, documentation, and a feedback loop. Adoption is a product problem, not only an engineering problem.
+1. **Connectors → + New Connector → Artifact Repositories → Docker Registry**.
+2. Name it `dockerhub-demo-shop`.
+3. Docker Registry URL: `https://index.docker.io/v2/`.
+4. Authentication: your Docker Hub username and an access token (not your password — create one at hub.docker.com → Account Settings → Security).
+5. Connectivity mode: **Connect through Delegate**.
+6. Save and Test.
 
-## Recommended Stack and Workflow
+Both connectors should show a green **Verified** status. If either fails, the pipeline will fail at the corresponding step — fix connector issues now rather than debugging mid-pipeline.
 
-A strong stack for this does not have to be complicated. Begin with a stable interface, a small set of trusted context sources, a reliable model or tool provider, and a visible review step. Add orchestration only when the workflow genuinely needs multiple steps or tool calls.
+---
 
-For context, prefer sources that are maintained as part of normal work: repositories, docs, tickets, runbooks, dashboards, and customer records with appropriate access controls. Stale context creates stale answers. If the knowledge base is not maintained, retrieval will not save the system.
+## Step 4: Build Your First CI Pipeline
 
-For model selection, test more than one option. Compare quality, latency, cost, context length, structured output support, tool calling behavior, privacy terms, and operational fit. The best model for drafting a document may not be the best model for code repair, classification, or high-volume summarization.
+Now the fun part. In your project, navigate to **Continuous Integration → Pipelines → + Create a Pipeline**.
 
-For workflow control, use typed inputs and outputs. JSON schemas, templates, checklists, and approval forms make results easier to validate. They also help users understand what the system can do. Free-form chat is useful for exploration, but production workflows benefit from structure.
+Name it `build-and-push`, choose **Inline** storage (YAML stored in Harness, not in your repo — you can switch later), and click **Start**.
 
-For monitoring, capture prompt versions, retrieval hits, model names, tool calls, latency, token usage, user edits, and final outcomes. These records make it possible to debug quality issues and defend decisions later. Monitoring also helps teams decide when a prompt needs a small change and when the workflow needs a redesign.
+Switch to the **YAML editor** view. Replace the default content with this:
 
-## Decision Checklist
+```yaml
+pipeline:
+  name: build-and-push
+  identifier: build_and_push
+  projectIdentifier: demo_shop
+  orgIdentifier: default
+  stages:
+    - stage:
+        name: Build
+        identifier: Build
+        type: CI
+        spec:
+          cloneCodebase: true
+          execution:
+            steps:
+              - step:
+                  type: Run
+                  name: Run Tests
+                  identifier: run_tests
+                  spec:
+                    connectorRef: dockerhub-demo-shop
+                    image: node:20-alpine
+                    command: |
+                      npm ci
+                      npm test -- --passWithNoTests
+              - step:
+                  type: BuildAndPushDockerRegistry
+                  name: Build and Push
+                  identifier: build_and_push_image
+                  spec:
+                    connectorRef: dockerhub-demo-shop
+                    repo: yourdockerhubusername/demo-shop
+                    tags:
+                      - latest
+                      - <+pipeline.sequenceId>
+          codebase:
+            connectorRef: github-demo-shop
+            repoName: your-github-username/demo-shop
+            build:
+              type: branch
+              spec:
+                branch: main
+```
 
-Use a decision checklist before you invest deeply. The checklist should force the team to connect the technology to a measurable workflow. For this topic, the most useful criteria are usually workflow fit, output quality, integration effort, operating cost, security posture, and long-term maintainability.
+Replace `yourdockerhubusername` and `your-github-username` with your actual usernames.
 
-Ask these questions before adoption:
+Click **Save**, then **Run Pipeline**. Watch the execution in the **Execution** tab. Each step expands to show live logs streamed from the Delegate.
 
-- What user job will this improve?
-- What evidence shows that the current workflow is slow, expensive, or error-prone?
-- What context does the system need, and who owns that context?
-- What actions can the system take, and which actions require approval?
-- What data must never be sent to a third-party service?
-- How will we measure deployment frequency, lead time, failed deployment rate, rollback time, build duration, and cloud spend variance; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership?
-- What happens when the model is uncertain or wrong?
-- Who reviews failures and improves the workflow?
-- What is the rollback plan if quality drops?
+A successful first run looks like:
 
-The answers do not need to be perfect at the start. They do need to be explicit. Explicit assumptions can be tested. Hidden assumptions become production incidents, budget surprises, or tools that nobody uses.
+```
+[Run Tests] npm ci: added 312 packages in 14s
+[Run Tests] PASS src/app.test.js (2.1s)
+[Build and Push] Successfully built abc123def456
+[Build and Push] Pushed yourdockerhubusername/demo-shop:latest
+[Build and Push] Pushed yourdockerhubusername/demo-shop:1
+```
 
-A good decision also includes a stop rule. Decide what result would make the team pause or abandon the rollout. This protects the organization from continuing an AI project simply because it is already in motion.
+---
+
+## Step 5: Add a CD Stage
+
+With the image built and pushed, add a Continuous Delivery stage that deploys it to your Kubernetes cluster.
+
+In the same pipeline YAML, add this stage block after the `Build` stage:
+
+```yaml
+    - stage:
+        name: Deploy to Dev
+        identifier: deploy_dev
+        type: Deployment
+        spec:
+          deploymentType: Kubernetes
+          service:
+            serviceRef: demo_shop_svc
+            serviceInputs:
+              serviceDefinition:
+                type: Kubernetes
+                spec:
+                  artifacts:
+                    primary:
+                      primaryArtifactRef: primary
+                      sources:
+                        - identifier: primary
+                          spec:
+                            connectorRef: dockerhub-demo-shop
+                            imagePath: yourdockerhubusername/demo-shop
+                            tag: <+pipeline.sequenceId>
+                          type: DockerRegistry
+          environment:
+            environmentRef: dev
+            deployToAll: false
+            infrastructureDefinitions:
+              - identifier: dev_k8s
+          execution:
+            steps:
+              - step:
+                  type: K8sRollingDeploy
+                  name: Rolling Deploy
+                  identifier: rolling_deploy
+                  spec:
+                    skipDryRun: false
+            rollbackSteps:
+              - step:
+                  type: K8sRollingRollback
+                  name: Rolling Rollback
+                  identifier: rolling_rollback
+                  spec: {}
+```
+
+Before this stage runs, you need to create two entities in **Continuous Delivery**:
+
+- **Service** (`demo_shop_svc`): defines what gets deployed (the Docker image).
+- **Environment + Infrastructure** (`dev` environment with `dev_k8s` infrastructure): defines where it deploys (your cluster namespace).
+
+Both have UI wizards. For the infrastructure, you'll re-use the same Delegate and point to a namespace like `demo-shop-dev`.
+
+---
+
+## Step 6: Enable AI Features
+
+Harness ships several AI capabilities under the **AIDA** (AI Development Assistant) umbrella. The most immediately useful for a new user are:
+
+- **AI Error Analysis** — automatically explains pipeline failures and suggests fixes.
+- **AI Root Cause Analysis (RCA)** — for CD failures, traces the failure back to a specific change or config drift.
+- **AI Code Review suggestions** — available in Harness Code repositories.
+
+### Enable AI Error Analysis
+
+1. Go to **Account Settings → AI Features** (or **Project Settings → AI Features** for project scope).
+2. Toggle **AI Error Analysis** to On.
+3. No additional config needed — it activates for all pipelines in scope.
+
+Now deliberately break your pipeline: change the test command to `npm run nonexistent` and run it. When the step fails, click the **AI Analysis** button that appears in the failure banner.
+
+Harness AIDA will return something like:
+
+> "The command `npm run nonexistent` failed because the script `nonexistent` is not defined in `package.json`. This is likely a typo or a missing script definition. Check your `package.json` `scripts` block and verify the intended command."
+
+That's AIDA reading the raw logs and producing an actionable explanation — no prompt engineering required from you.
+
+### Enable AI Root Cause Analysis for CD
+
+For deployment failures, enable RCA under the same AI Features menu. RCA requires that your environment and service are set up with change tracking, which Harness handles automatically once the CD stage runs at least once successfully.
+
+---
+
+## Pipeline Flow Diagram
+
+Here is the full pipeline from commit to deployed container:
+
+```mermaid
+flowchart LR
+    A([Git Push\nto main]) --> B[Harness CI\nTrigger]
+    B --> C{Run Tests\nvia Delegate}
+    C -->|Pass| D[Build Docker Image]
+    C -->|Fail| E[AIDA Error Analysis\n+ Notify]
+    D --> F[Push to Registry\n:latest + :seq-id]
+    F --> G[CD Stage\nTrigger]
+    G --> H[K8s Rolling Deploy\nto dev namespace]
+    H -->|Success| I([Deployment\nComplete])
+    H -->|Failure| J[Auto Rollback\n+ AIDA RCA]
+    J --> K[Slack / PagerDuty\nAlert with AI Summary]
+```
+
+---
+
+## Troubleshooting Common Issues
+
+**Delegate stays Pending / never connects**
+
+Check pod events first: `kubectl describe pod -n harness-delegate -l app=harness-delegate`. Look for image pull errors (likely a network policy or registry auth issue) or resource pressure (`Insufficient cpu` or `Insufficient memory`). The Delegate image is pulled from Docker Hub — if your cluster nodes can't reach Docker Hub, you'll need to mirror the image or configure a pull secret.
+
+**Connector test fails with "Unable to connect"**
+
+This always routes through the Delegate. Verify the Delegate is Connected in the UI before debugging the connector. If the Delegate is connected but the test fails, check whether your cluster has outbound access to GitHub/Docker Hub from the Delegate pod: `kubectl exec -n harness-delegate <delegate-pod> -- curl -I https://github.com`.
+
+**BuildAndPushDockerRegistry step fails with "unauthorized"**
+
+Your Docker Hub access token may have expired or may be missing the `Read & Write` permission. Regenerate the token, update the connector secret in Harness, and retest the connector before re-running the pipeline.
+
+**K8s Rolling Deploy fails with "ImagePullBackOff"**
+
+The tag pushed during CI and the tag referenced in the CD stage must match. In the YAML above, both use `<+pipeline.sequenceId>`. If you customized the tag expression, verify it resolves to the same value in both stages by checking the **Execution Inputs** tab of a completed run.
+
+**AIDA shows no analysis button**
+
+AI features are scoped at account or project level. Confirm AIDA is enabled in **Project Settings → AI Features**, not just at the account level. Also verify your Harness plan includes AI features — free-tier availability changes over time, so check the current plan comparison at harness.io/pricing.
+
+---
+
+## Next Steps
+
+Once your first pipeline is stable, here's where to go:
+
+- **Add a trigger** — Set up a webhook trigger so every push to `main` automatically runs the pipeline without manual clicks. In Harness: **Triggers → + New Trigger → Webhook → GitHub**.
+- **Add a staging environment** — Clone the CD stage, point it at a `staging` namespace, and add a manual approval gate between `dev` and `staging`.
+- **Enable Harness Policy as Code** — Use OPA policies to enforce standards: every pipeline must have a test step, images must be scanned before push, deployments to production require two approvals.
+- **Connect Harness to your observability stack** — Link Datadog, New Relic, or Prometheus. Harness CV (Continuous Verification) can automatically roll back if metrics degrade after a deploy.
+- **Explore Harness Code** — Harness's built-in Git hosting adds AI-assisted PR reviews directly inside the platform, eliminating the GitHub connector hop for new projects.
+
+Here is a suggested learning path after completing this tutorial:
+
+```mermaid
+flowchart TD
+    A([This Tutorial\nComplete]) --> B[Add Webhook Trigger]
+    B --> C[Staging Environment\n+ Approval Gate]
+    C --> D{Choose next focus}
+    D -->|Governance| E[Policy as Code\nOPA Rules]
+    D -->|Reliability| F[Continuous Verification\nDatadog / Prometheus]
+    D -->|Developer Experience| G[Harness Code\nAI PR Reviews]
+    E --> H[Production Pipeline\nFully Governed]
+    F --> H
+    G --> H
+    H --> I([Platform Engineering\nMature State])
+```
+
+---
+
+## Tips and Best Practices
+
+**Store pipeline YAML in your repo, not inline.** The Inline option is convenient for getting started, but as soon as the pipeline stabilizes, switch to **Remote** storage (Git experience). Your pipeline becomes version-controlled, reviewable in PRs, and auditable.
+
+**Use expressions instead of hardcoded values.** `<+pipeline.sequenceId>` for image tags, `<+env.name>` for environment-specific config, `<+secrets.getValue("db_password")>` for credentials. Hardcoded values in YAML drift and break silently.
+
+**Tag your Delegates.** If you run multiple Delegates (prod cluster vs. dev cluster), add selector tags in the Delegate YAML and reference those tags in pipeline steps. This ensures build steps run on the dev Delegate and production deploys run only on the production Delegate.
+
+**Keep CI stages fast.** Run unit tests in CI, integration tests in a separate stage triggered on merge. A CI stage that takes fifteen minutes will be skipped or parallelized badly. Target under five minutes for the critical path.
+
+**Review AI analysis outputs before acting on them.** AIDA is a strong first-pass tool, but it reads logs and applies heuristics — it doesn't have visibility into your system's operational history. Treat its output as a starting point for your investigation, not a final diagnosis.
+
+**Rotate connector secrets on a schedule.** Harness stores connector credentials in its secret manager. Add a quarterly reminder to rotate PATs and access tokens. A stale token will fail silently at 3am on a Friday.
+
+---
 
 ## FAQ
 
-### Is this only for advanced AI teams?
+### Do I need a paid Harness plan to follow this tutorial?
 
-No. The concepts are useful for small teams as well, but the implementation should match the team's maturity. A small team can start with a narrow workflow, manual review, and simple logs. A larger organization may need policy controls, shared evaluation infrastructure, and formal approval paths.
+No. The free plan supports everything in this tutorial: one Delegate, unlimited pipelines (with build minute caps), CI and CD stages, and basic AI features. As of early 2026, AIDA Error Analysis is available on the free tier. RCA and some advanced AI features require a paid plan. Check harness.io/pricing for the current breakdown — it changes faster than tutorials do.
 
-### What is the biggest risk?
+### Can I run the Delegate on a VM instead of Kubernetes?
 
-The biggest risk is not that the model makes one obvious mistake. The bigger risk is that a workflow quietly produces plausible but wrong output at scale. This is why evaluation, review, and monitoring matter. Treat AI output as work that needs quality control, not as magic.
+Yes. Harness supports a Docker-based Delegate for VM deployments. When generating the Delegate manifest, select **Docker** instead of Kubernetes. You get a `docker run` command with your account token embedded. The rest of the tutorial works identically — only the install step changes.
 
-### How long does adoption take?
+### How does Harness handle secrets?
 
-A useful prototype can often be built quickly, but production adoption takes longer because teams need permissions, evaluation, documentation, and user feedback. Plan for iteration. The first version should teach you which assumptions were wrong.
+Harness has a built-in secrets manager and integrates with HashiCorp Vault, AWS Secrets Manager, GCP Secret Manager, and Azure Key Vault. For this tutorial, the connector credentials are stored in Harness's default secrets manager. For production, connect your existing vault and reference secrets using `<+secrets.getValue("secret-name")>` in pipeline YAML — the plain-text value is never logged.
 
-### Should we build or buy?
+### What's the difference between a Delegate selector and a Delegate tag?
 
-Buy when the workflow is common, the vendor integrates with your stack, and the risk profile is acceptable. Build when the workflow depends on proprietary context, custom tools, or differentiated product behavior. Many teams use a hybrid approach: buy model access or infrastructure, then build the workflow layer themselves.
+They're the same thing with different names in different parts of the UI. A **tag** is what you assign to the Delegate (e.g., `prod`, `dev`, `us-east-1`). A **selector** is how you reference that tag in a pipeline step or connector to say "this step must run on a Delegate with this tag." Use them together to ensure the right workloads run in the right environments.
 
-### How should success be measured?
+### Can I use Harness with a monorepo?
 
-Measure outcomes rather than excitement. Good measures include deployment frequency, lead time, failed deployment rate, rollback time, build duration, and cloud spend variance; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership. Add human review quality and user adoption data. If people try the system once and return to the old process, the rollout has not succeeded.
+Yes, and it works well. Harness supports path-based triggers so the pipeline only runs when files inside a specific directory change. In your webhook trigger settings, add a **file path filter** like `services/demo-shop/**`. Multiple services in the same repo get separate pipelines with separate path filters, and the Delegate handles them all without conflict.
 
-## Final Takeaway
+---
 
-This approach is valuable when it is connected to a real workflow, evaluated against real examples, and operated with clear boundaries. The winning teams will not be the ones with the longest list of AI tools. They will be the teams that turn AI into repeatable, observable, and trusted work.
+Getting started with Harness CI/CD has a real learning curve, but it follows a clear progression: Delegate first, connectors second, CI pipeline third, CD stage fourth, AI features on top. Follow that order and each step is debuggable in isolation. Jump ahead and the errors multiply.
 
-Start small, measure honestly, and improve the system with evidence. Use pipelines, source control, build runners, deployment targets, observability tools, feature flags, policy checks, and incident workflows; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations where they fit, but keep the focus on faster releases with lower operational risk; clearer tool selection and workflows that save time without creating hidden risk. That is the difference between an impressive demo and a capability that keeps paying off after the novelty fades.
+The AI features are not the reason to choose Harness, but they compound the value once you have a working pipeline. Error analysis alone has saved me hours of log-scrolling. Root cause analysis on deployment failures cut my incident response time meaningfully. Those aren't marketing claims — they're things that work quietly in the background once the foundation is solid.
+
+Get the foundation right. The rest follows.

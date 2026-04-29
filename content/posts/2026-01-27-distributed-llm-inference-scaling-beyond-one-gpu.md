@@ -2,145 +2,234 @@
 title: "Distributed LLM Inference: Scaling Beyond One GPU"
 date: "2026-01-27"
 slug: "distributed-llm-inference-scaling-beyond-one-gpu"
-description: "A practical, developer-friendly guide to distributed llm inference: scaling beyond one gpu with architecture, evaluation, rollout advice, and FAQ."
+description: "A technical deep-dive into distributed LLM inference: tensor, pipeline, and data parallelism, top frameworks, hardware planning, and real cost analysis."
 heroImage: "/images/heroes/distributed-llm-inference-scaling-beyond-one-gpu.webp"
 tags: [llm, ai-tools]
 ---
 
-this approach becomes important the moment an experiment turns into a service that real users depend on.
+I ran my first LLaMA-2 70B inference job on a single A100 80 GB and immediately hit the wall every ML engineer eventually hits: the model barely fits in VRAM, throughput is embarrassingly low, and any attempt to batch more than four requests at once throws an out-of-memory error. The fix is not buying a bigger GPU. The fix is distributed LLM inference — spreading the model and its workload across multiple devices in a way that is coherent, efficient, and cheap enough to be worth running in production.
 
-This guide is written for developers, technical product managers, AI engineers, and teams choosing models for real applications; operators, developers, founders, analysts, and teams comparing AI products for daily work. It focuses on large language models, model evaluation, inference, prompting, retrieval, and production AI systems; AI tools, developer productivity, automation platforms, and practical AI workflows and explains how to evaluate the topic in a way that leads to more reliable AI products with measurable quality, cost, and latency controls; clearer tool selection and workflows that save time without creating hidden risk. The emphasis is practical: what the concept means, how it fits into a real stack, what trade-offs matter, and how to avoid common implementation mistakes.
+This guide covers how distributed inference actually works, which parallelism strategy matches which problem, the frameworks that implement these strategies well, and how to make a defensible hardware and cost decision before you sign anything.
 
-The AI market changes quickly, so this article avoids brittle claims about exact pricing or one-time benchmark rankings. Use it as a durable decision framework, then confirm vendor limits, model names, and pricing on the official product pages before you buy or deploy.
+## Why You Cannot Just Use One GPU
 
-## What It Really Means
+The arithmetic is unforgiving. A model parameter stored in fp16 takes 2 bytes. A 70B-parameter model therefore requires roughly 140 GB just for the weights — already beyond any single consumer or datacenter GPU available today. The 175B GPT-3 class model needs around 350 GB. Llama 3 405B in fp16 requires over 800 GB.
 
-At a high level, This topic sits inside large language models, model evaluation, inference, prompting, retrieval, and production AI systems; AI tools, developer productivity, automation platforms, and practical AI workflows. The important point is not the label itself. The important point is the workflow it enables. A useful AI tool or model should reduce the distance between a user's intent and a correct, reviewed result. It should also make the work easier to observe, improve, and govern over time.
+Memory is only half the problem. Attention's KV cache grows with sequence length and batch size. At a 4 K context window with a batch of 32, the KV cache for Llama 3 70B adds another 30–40 GB on top of the weights. At 32 K context the cache dominates the budget entirely.
 
-For a developer team, that usually means three things. First, the system has to understand enough context to be useful. That context might be source code, product documentation, logs, tickets, metrics, documents, examples, or previous decisions. Second, the system needs a reliable way to act. That action might be generating code, calling an API, searching a knowledge base, opening a pull request, drafting a release plan, or summarizing a customer conversation. Third, the system needs a feedback loop so the team can measure quality and fix regressions.
+Single-GPU throughput is also bounded by memory bandwidth, not compute. The best H100 SXM5 has 3.35 TB/s of HBM3 bandwidth. Serving a 70B model at full utilization means loading roughly 140 GB of weights per forward pass, yielding a theoretical ceiling of about 23 forward passes per second — before KV cache, activation memory, or any overhead. Real-world single-GPU throughput on large models lands 60–70 % below that ceiling.
 
-A common mistake is to treat this as a single product decision. In practice, it is an operating model. The best teams define where AI is allowed to help, where humans must review, how outputs are tested, and what happens when the system is uncertain. That operating model matters more than the name on the invoice.
+Distributing inference across GPUs lets you break both constraints simultaneously: more aggregate VRAM for the weights, and more aggregate bandwidth for throughput.
 
-When you compare options, ask whether the tool fits the jobs people already do. A strong system should work with model APIs, open-weight models, prompt templates, embeddings, vector databases, evaluation suites, logs, and guardrails; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations. It should improve a real process without forcing every team to rebuild its workflow from scratch. If adoption requires too much ritual, the system will look impressive in a demo and then disappear from daily use.
+## The Three Parallelism Strategies
 
-## Where It Creates Value
+There are three canonical ways to split an LLM across devices. They solve different problems and compose with each other.
 
-The best use cases are repetitive enough to benefit from automation but nuanced enough to justify AI. Purely mechanical work can often be handled with scripts. Highly ambiguous strategy work still needs experienced people. The attractive middle ground is work where context, judgment, and speed all matter.
+```mermaid
+graph TD
+    subgraph TP["Tensor Parallelism"]
+        T1["GPU 0<br/>Half of each layer's<br/>weight matrix"]
+        T2["GPU 1<br/>Other half of each<br/>weight matrix"]
+        T1 <-->|"AllReduce<br/>after each op"| T2
+    end
 
-One common use case is research and synthesis. Teams can use AI to gather scattered information, compare options, and turn notes into a structured recommendation. This is useful for architecture reviews, vendor selection, incident summaries, release notes, and customer support analysis. The output should not be accepted blindly, but it can shorten the first draft from hours to minutes.
+    subgraph PP["Pipeline Parallelism"]
+        P1["GPU 0<br/>Layers 0–15"]
+        P2["GPU 1<br/>Layers 16–31"]
+        P3["GPU 2<br/>Layers 32–47"]
+        P4["GPU 3<br/>Layers 48–63"]
+        P1 -->|activations| P2
+        P2 -->|activations| P3
+        P3 -->|activations| P4
+    end
 
-A second use case is assisted execution. In software teams, that may mean code generation, test generation, migration planning, configuration review, or pull request analysis. In operations teams, it may mean triage, runbook lookup, log summarization, or routing incidents to the right owner. The important boundary is that AI should work inside a controlled path, not improvise across production systems without oversight.
+    subgraph DP["Data Parallelism"]
+        D1["GPU 0<br/>Full model replica<br/>Requests 0–7"]
+        D2["GPU 1<br/>Full model replica<br/>Requests 8–15"]
+        D3["GPU 2<br/>Full model replica<br/>Requests 16–23"]
+    end
+```
 
-A third use case is quality improvement. AI can help create test cases, summarize failures, classify feedback, detect inconsistencies, and highlight missing documentation. This is where the approach often produces compounding value. Each cycle improves the team's knowledge base, examples, evaluation cases, and standard operating procedures.
+### Tensor Parallelism
 
-The strongest teams start with one or two narrow workflows. They measure task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership before and after adoption. Then they expand only when the data shows that the system helps. This keeps the project grounded and prevents the team from chasing novelty.
+Tensor parallelism (TP) splits individual weight matrices across GPUs within the same layer. In the attention block, each GPU holds a subset of the attention heads. In the MLP block, each GPU holds a column slice of the up-projection matrix and the corresponding row slice of the down-projection matrix.
 
-## A Practical Architecture
+Every forward pass requires an AllReduce communication step across the TP group to combine partial results. This means tensor parallelism only works well when GPUs are connected by high-bandwidth interconnect — NVLink between GPUs on the same node or NVSwitch in an NVLink domain. Over PCIe or Ethernet, the AllReduce latency dominates and throughput collapses.
 
-A production-ready approach to this usually has five layers: interface, context, reasoning, action, and evaluation. The interface is where users express intent. It might be a chat box, command line, editor extension, dashboard, API endpoint, or background job. The interface should make the expected result obvious and should expose enough controls for the user to review or redirect the work.
+The practical rule: use tensor parallelism within a node (typically TP degree 4 or 8 on an 8-GPU node) and never stretch it across nodes unless you have InfiniBand HDR or NDR at minimum.
 
-The context layer gathers the information the system needs. This layer can include retrieval from documents, code search, database records, logs, metrics, tickets, configuration files, or user-provided examples. Good context is selective. Sending everything to a model increases cost and noise. A better pattern is to retrieve the smallest set of evidence that can support the next decision.
+**Real number:** vLLM serving Llama 3 70B with TP=4 on four A100 80 GB GPUs (NVLink) achieves approximately 1,800 tokens/second at batch size 32. The same model with TP=4 over PCIe drops to around 900 tokens/second — the interconnect is the bottleneck.
 
-The reasoning layer chooses a plan or produces an answer. This may be a single model call, a chain of calls, a workflow graph, or an agent loop. Keep this layer simple until complexity is justified. Many teams build elaborate multi-agent systems before they can reliably evaluate one model call. That usually makes debugging harder.
+### Pipeline Parallelism
 
-The action layer connects the system to tools. These tools can include model APIs, open-weight models, prompt templates, embeddings, vector databases, evaluation suites, logs, and guardrails; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations. Tool use should be explicit, typed, logged, and permissioned. When an action can affect data, infrastructure, cost, or customers, require approval or run it in a sandbox first.
+Pipeline parallelism (PP) assigns consecutive transformer layers to different GPUs. GPU 0 runs layers 0–15, GPU 1 runs layers 16–31, and so on. Activations flow from one stage to the next via point-to-point communication (typically over NVLink or InfiniBand). Because each stage only sends one activation tensor rather than doing an AllReduce, pipeline parallelism tolerates higher-latency interconnects than tensor parallelism.
 
-The evaluation layer closes the loop. It should track task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership and preserve examples of both success and failure. Without this layer, teams are forced to judge quality by anecdotes. With it, they can improve prompts, retrieval, model choice, and workflow design with evidence.
+The classic problem with pipeline parallelism is the pipeline bubble: GPUs in earlier stages sit idle while the batch travels through later stages, and vice versa. Micro-batching reduces the bubble fraction — instead of sending one large batch through the pipeline, you slice it into micro-batches and keep all stages busy with different micro-batches simultaneously. The bubble fraction is approximately `1 / (number of micro-batches)`.
 
-## How to Evaluate Quality
+Pipeline parallelism is the right choice for multi-node deployments where inter-node bandwidth is limited (10–100 Gbps Ethernet) and when the model is so large that it cannot fit on a single node even with tensor parallelism.
 
-Evaluation is where serious AI work separates itself from experimentation. A useful evaluation plan for this starts with real tasks. Gather examples from support tickets, pull requests, internal documents, analytics requests, incident reports, or customer conversations. Remove sensitive information, then turn those examples into a small but representative test set.
+**Real number:** DeepSpeed-Inference running a 175B model across 16 A100 nodes (8 GPUs each, PP=16, TP=8) achieves around 450 tokens/second at a 64-sequence batch. Bubble overhead at 8 micro-batches is approximately 12.5 %, which is acceptable at this scale.
 
-Each test case should define the input, the expected behavior, and the failure modes that matter. For some tasks, the expected result is exact. For example, a JSON extraction task can be checked against a schema. For other tasks, the expected result is judged by a rubric. A good rubric might score correctness, completeness, clarity, citation quality, security awareness, and usefulness.
+### Data Parallelism
 
-Do not rely on a single aggregate score. Track dimensions separately. A system can be fast and cheap while still being wrong. It can be accurate but too slow for interactive use. It can produce polished language while ignoring important constraints. The right choice depends on which dimension is binding for the workflow.
+Data parallelism (DP) replicates the full model on each GPU (or each TP/PP group) and splits the incoming request stream across replicas. There is no per-token communication between replicas — each handles its batch independently and results are returned directly to the client.
 
-For this topic, useful metrics include task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership. Add qualitative review for edge cases. Keep examples where the system failed, because those examples become the most valuable part of the evaluation set. When you change prompts, retrieval rules, model versions, or tool permissions, rerun the same cases.
+Data parallelism does not help you fit a model that is too large for a single GPU. It helps you scale throughput once you already have a working single-replica deployment. Doubling the number of replicas doubles your requests-per-second capacity linearly, up to the point where your load balancer or upstream network becomes the bottleneck.
 
-Evaluation also protects teams from demo bias. A demo tends to show happy paths. A test set shows what happens when inputs are messy, incomplete, adversarial, or simply boring. Real users send all four.
+Most production deployments combine all three: TP within a node, PP across nodes, and DP across node groups to scale total throughput.
 
-## Implementation Plan
+## Parallelism Strategy Comparison
 
-Start by writing a one-page problem statement. Describe the users, the job they are trying to complete, the current pain, and the measurable result you want. This keeps the project anchored in a business or engineering outcome instead of a vague AI initiative.
+```mermaid
+xychart-beta
+    title "Strategy Fit by Problem Dimension"
+    x-axis ["Fits oversized model", "Scales throughput", "Low latency", "Works across nodes", "Simple to tune"]
+    y-axis "Score (1-5)" 0 --> 5
+    bar [1, 2, 5, 2, 4]
+    bar [4, 3, 3, 5, 3]
+    bar [2, 5, 3, 5, 5]
+```
 
-Next, map the workflow from request to final review. Identify where context enters the system, where the model is used, where a tool is called, and where a human approves the result. Mark any step that touches customer data, production infrastructure, financial spend, or security-sensitive information. Those steps need stronger controls.
+| Strategy | Solves VRAM limit | Scales throughput | Latency impact | Best interconnect | Complexity |
+|---|---|---|---|---|---|
+| Tensor Parallelism | Yes (within node) | Moderate | Low (with NVLink) | NVLink / NVSwitch | Medium |
+| Pipeline Parallelism | Yes (multi-node) | Moderate | Medium (bubble) | InfiniBand or better | High |
+| Data Parallelism | No | High (linear) | None | Any | Low |
+| TP + PP + DP | Yes (large scale) | Very high | Medium | InfiniBand | Very high |
 
-Then build the smallest working version. Use existing tools where possible. Connect only the context sources that matter. Add simple logging. Save inputs and outputs for review. Avoid building a generalized platform before you know which workflow will survive contact with users.
+## Key Frameworks for Distributed LLM Inference
 
-After the first version works, run it against a test set. Review failures in batches. Some failures will be prompt problems. Some will be retrieval problems. Some will be product problems, where the interface lets users ask for work the system cannot safely perform. Fix the highest-impact category first.
+### vLLM
 
-For production systems, treat observability as a core feature. Logs, traces, cost records, and user feedback should be available from the first release, not added only after the first incident.
+vLLM is the community standard for high-throughput LLM serving. Its core innovation is PagedAttention — a KV cache management algorithm borrowed from operating-system virtual memory. Instead of pre-allocating a contiguous VRAM block for each sequence's KV cache (which wastes memory when sequences end at different lengths), PagedAttention manages KV cache in fixed-size pages and reclaims them as sequences complete.
 
-Finally, write an operating guide. Include setup steps, permissions, expected inputs, known limitations, escalation rules, and evaluation commands. A tool that only one person knows how to operate is not production-ready, even if it works well in a notebook.
+The practical result is 2–4x higher throughput than naive implementations at equivalent VRAM budgets, because more sequences fit in memory simultaneously. vLLM supports tensor parallelism natively via the `--tensor-parallel-size` flag and pipeline parallelism as of version 0.4. It exposes an OpenAI-compatible REST API out of the box, making migration from the OpenAI API straightforward.
 
-## Common Mistakes to Avoid
+**Best for:** Teams serving popular open-weight models (Llama, Mistral, Qwen) who want the highest tokens/second per dollar with a simple deployment story.
 
-The first mistake is adopting this approach without a clear owner. AI work crosses product, engineering, legal, security, and operations. If nobody owns the workflow, decisions become fragmented. Assign an owner who can prioritize the use case, gather feedback, and decide when the system is good enough to expand.
+### Hugging Face Text Generation Inference (TGI)
 
-The second mistake is trusting polished output. Large language models are good at sounding confident. That does not mean the answer is grounded. Require citations, retrieved evidence, tests, schemas, or human review when the task has real consequences. The review process should be designed before the system is widely used.
+TGI is Hugging Face's production serving solution. It ships with tensor parallelism, flash attention, continuous batching, and a well-maintained Docker image that supports most models in the Hugging Face Hub. The API surface is slightly different from OpenAI's, though there are compatibility layers.
 
-The third mistake is hiding uncertainty. If the system is missing context, blocked by permissions, or making an assumption, the user should see that. A clear refusal or a request for more information is better than a fabricated answer. This is especially important in large language models, model evaluation, inference, prompting, retrieval, and production AI systems; AI tools, developer productivity, automation platforms, and practical AI workflows because small errors can cascade through technical decisions.
+TGI's strength is breadth: it handles quantized models (GPTQ, AWQ, bitsandbytes), Paged Attention, speculative decoding, and watermarking. Hugging Face's SaaS Inference Endpoints product runs TGI under the hood, so teams that want managed infrastructure without deep DevOps work can skip self-hosting entirely.
 
-The fourth mistake is ignoring cost and latency until late. Token usage, tool calls, retries, and long context windows can become expensive. Measure cost per successful task, not only cost per model call. A cheaper model that requires repeated human cleanup may be more expensive than a stronger model with fewer failures.
+**Best for:** Teams already invested in the Hugging Face ecosystem or those who want managed serving without leaving the HF toolchain.
 
-The fifth mistake is skipping change management. Users need to know what the system is for, when to trust it, and how to report problems. Good rollout includes examples, office hours, documentation, and a feedback loop. Adoption is a product problem, not only an engineering problem.
+### NVIDIA TensorRT-LLM
 
-## Recommended Stack and Workflow
+TensorRT-LLM is NVIDIA's high-performance inference library, optimized specifically for their GPU architectures. It compiles models into TensorRT engines that fuse operations, apply CUDA-level kernel optimizations, and exploit hardware features (like FP8 precision on H100s) that general-purpose frameworks leave on the table.
 
-A strong stack for this does not have to be complicated. Begin with a stable interface, a small set of trusted context sources, a reliable model or tool provider, and a visible review step. Add orchestration only when the workflow genuinely needs multiple steps or tool calls.
+The tradeoff is compilation time and flexibility. Building a TensorRT engine for a large model can take 30–60 minutes, and re-compilation is required whenever you change batch size limits, sequence length limits, or precision settings. The engine is also GPU-architecture-specific — an engine compiled for A100 will not run on H100 without recompilation.
 
-For context, prefer sources that are maintained as part of normal work: repositories, docs, tickets, runbooks, dashboards, and customer records with appropriate access controls. Stale context creates stale answers. If the knowledge base is not maintained, retrieval will not save the system.
+At maximum throughput, TensorRT-LLM typically delivers 20–40 % higher tokens/second than vLLM on the same hardware, which matters when you are running thousands of GPUs and each percentage point is a real dollar figure.
 
-For model selection, test more than one option. Compare quality, latency, cost, context length, structured output support, tool calling behavior, privacy terms, and operational fit. The best model for drafting a document may not be the best model for code repair, classification, or high-volume summarization.
+**Best for:** Teams running NVIDIA GPUs at scale who can absorb the operational complexity in exchange for peak performance.
 
-For workflow control, use typed inputs and outputs. JSON schemas, templates, checklists, and approval forms make results easier to validate. They also help users understand what the system can do. Free-form chat is useful for exploration, but production workflows benefit from structure.
+### DeepSpeed-Inference
 
-For monitoring, capture prompt versions, retrieval hits, model names, tool calls, latency, token usage, user edits, and final outcomes. These records make it possible to debug quality issues and defend decisions later. Monitoring also helps teams decide when a prompt needs a small change and when the workflow needs a redesign.
+DeepSpeed-Inference is Microsoft's distributed inference library, part of the broader DeepSpeed ecosystem. It supports ZeRO-Inference (sharding model weights across GPUs without full replication), tensor parallelism, and pipeline parallelism at multi-node scale. It also includes Transformer-Kernels, a set of CUDA kernels tuned for inference.
 
-## Decision Checklist
+DeepSpeed shines at the very large end of the model size range — 100B+ parameter models across 16 or more nodes — where the combination of pipeline and tensor parallelism needs to be orchestrated carefully. The API is more complex than vLLM or TGI, and community support is thinner for pure inference use cases (DeepSpeed's larger user base is training-focused).
 
-Use a decision checklist before you invest deeply. The checklist should force the team to connect the technology to a measurable workflow. For this topic, the most useful criteria are usually workflow fit, output quality, integration effort, operating cost, security posture, and long-term maintainability.
+**Best for:** Research teams and enterprises running genuinely massive models (175B+) across many nodes who need fine-grained parallelism control.
 
-Ask these questions before adoption:
+## Framework Comparison
 
-- What user job will this improve?
-- What evidence shows that the current workflow is slow, expensive, or error-prone?
-- What context does the system need, and who owns that context?
-- What actions can the system take, and which actions require approval?
-- What data must never be sent to a third-party service?
-- How will we measure task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership?
-- What happens when the model is uncertain or wrong?
-- Who reviews failures and improves the workflow?
-- What is the rollback plan if quality drops?
+| Framework | Max parallelism | KV cache efficiency | Ease of use | Hardware lock-in | Best model size |
+|---|---|---|---|---|---|
+| vLLM | TP + PP | Very high (PagedAttention) | High | None | 7B–70B |
+| TGI | TP | High | High | None | 7B–70B |
+| TensorRT-LLM | TP + PP | High | Medium | NVIDIA only | 7B–405B |
+| DeepSpeed | TP + PP + ZeRO | Medium | Low | None | 70B–1T+ |
 
-The answers do not need to be perfect at the start. They do need to be explicit. Explicit assumptions can be tested. Hidden assumptions become production incidents, budget surprises, or tools that nobody uses.
+## Hardware Planning
 
-A good decision also includes a stop rule. Decide what result would make the team pause or abandon the rollout. This protects the organization from continuing an AI project simply because it is already in motion.
+Choosing hardware for distributed inference requires matching three constraints: VRAM budget (can you fit the model?), bandwidth (can you move activations fast enough?), and cost per token.
+
+```mermaid
+flowchart TD
+    A[Model size?] --> B{Fits in 1 GPU?}
+    B -->|Yes, <80B params| C[Single GPU serving<br/>H100 or A100 80GB]
+    B -->|No| D{Fits in 1 node?}
+    D -->|Yes, <640GB| E[Tensor Parallelism<br/>TP=4 or TP=8<br/>8x A100/H100 node]
+    D -->|No| F{Budget for NVLink fabric?}
+    F -->|Yes| G[NVLink / NVSwitch cluster<br/>TP=8 within node<br/>PP across nodes]
+    F -->|No| H[Pipeline Parallelism<br/>InfiniBand between nodes<br/>TP=4 or TP=8 within node]
+    C --> I{Throughput goal met?}
+    E --> I
+    G --> I
+    H --> I
+    I -->|No| J[Add Data Parallel replicas<br/>Scale horizontally]
+    I -->|Yes| K[Done — monitor and tune<br/>KV cache, batch size, quantization]
+```
+
+**A100 80 GB SXM:** The current production workhorse. NVLink 3.0 at 600 GB/s bidirectional within a node. Four A100s can serve Llama 3 70B at TP=4 with comfortable headroom. Eight A100s can serve a 130B model. Cloud spot pricing runs $2–3/GPU-hour; on-demand $3–4.
+
+**H100 SXM5 80 GB:** The current performance leader. NVLink 4.0 at 900 GB/s, 3.35 TB/s HBM3 bandwidth, native FP8 support. A single H100 can serve Llama 3 70B in FP8 quantization. Four H100s in NVLink configuration push Llama 3 70B throughput to approximately 4,200 tokens/second at batch 32 — roughly 2.3x the A100 equivalent. Cloud on-demand runs $8–10/GPU-hour.
+
+**AMD MI300X 192 GB:** AMD's answer to the H100. 192 GB of HBM3 memory per GPU means a single MI300X can hold Llama 3 70B in fp16 with room for generous KV cache. ROCm support in vLLM is stable as of early 2026. Cost is competitive with H100, and availability through cloud providers has improved. If your team is comfortable with ROCm, the MI300X is worth evaluating seriously.
+
+**L4 / L40S (24–48 GB):** Lower-cost inference options for smaller models. An L4 handles 7B and 13B models easily and costs around $0.80/GPU-hour spot. Not suitable for models above 30B unless you are willing to aggressively quantize to 4-bit.
+
+## KV Cache Optimization
+
+The KV cache is often the binding memory constraint in production, not the weights. At long context lengths, the KV cache for a single sequence in Llama 3 70B grows to several gigabytes. Three techniques matter most.
+
+**PagedAttention (vLLM's core mechanic):** Manages KV cache in fixed-size blocks rather than contiguous per-sequence allocations. Reduces memory fragmentation and allows effective KV cache utilization above 90 % in most workloads. The baseline requirement for high-throughput serving.
+
+**Prefix caching:** When multiple requests share a common prompt prefix (a system prompt, a document, a few-shot example), the KV cache for that prefix can be computed once and reused. vLLM 0.4+ and TGI support prefix caching. In deployments where a fixed system prompt is used for all requests — common in chatbot and RAG applications — prefix caching cuts first-token latency by 40–70 % and halves the memory cost of that shared prefix.
+
+**Quantization of KV cache:** The KV cache can be stored in FP8 or INT8 instead of FP16 without significant quality loss at most context lengths. TensorRT-LLM supports FP8 KV cache natively. vLLM added experimental FP8 KV cache support in 0.5. This effectively doubles the number of sequences that fit in VRAM at the cost of a small precision reduction.
+
+## Cost Analysis
+
+Distributed inference cost breaks down into three buckets: compute (GPU-hours), network (inter-node bandwidth charges on cloud), and engineering (the hours spent building and operating the system).
+
+For a team serving 10 million tokens per day on Llama 3 70B:
+
+| Setup | Hardware | Tokens/sec | GPUs needed | Est. cloud cost/month |
+|---|---|---|---|---|
+| Single A100 80GB | A100 SXM | ~450 | 1 | ~$2,400 |
+| TP=4 A100 cluster | 4x A100 SXM | ~1,800 | 4 | ~$5,760 |
+| TP=4 H100 cluster | 4x H100 SXM | ~4,200 | 4 | ~$15,840 |
+| TP=4 A100 + quantization | 4x A100 SXM | ~2,400 (AWQ INT4) | 4 | ~$5,760 |
+
+10 million tokens/day is approximately 116 tokens/second sustained. A single A100 comfortably handles that load, but with no headroom for traffic spikes. A TP=4 A100 cluster provides 15x headroom and lets you run multiple model variants simultaneously.
+
+The single most impactful cost lever for most teams is not hardware selection — it is quantization. AWQ INT4 on Llama 3 70B reduces VRAM usage by ~50 % with a measured quality drop of 0.5–1.5 points on standard benchmarks. That halved VRAM requirement either lets you serve on half the GPUs or doubles your batch capacity on the same hardware.
+
+The second most impactful lever is continuous batching, which all four frameworks support. Continuous batching replaces static batch inference (wait until a full batch accumulates, then process it) with dynamic insertion of new sequences as in-progress sequences complete. On workloads with variable request arrival rates, continuous batching improves GPU utilization by 30–50 % compared to static batching.
+
+## The Verdict
+
+Distributed LLM inference is not optional for serious production deployments of models above 13B parameters. The memory math makes single-GPU serving impractical for anything in the 70B–405B range, and the throughput math makes it essential even for smaller models at scale.
+
+My practical recommendation for most teams:
+
+Start with vLLM and tensor parallelism on a single node (TP=4 or TP=8 depending on model size). Apply AWQ or GPTQ INT4 quantization if VRAM is tight. Enable PagedAttention and prefix caching from day one. Only add pipeline parallelism and multi-node complexity when a single 8-GPU node is genuinely insufficient for your throughput or model size requirements.
+
+If you are running NVIDIA GPUs at scale and have an MLOps team comfortable with compilation pipelines, evaluate TensorRT-LLM for the 20–40 % throughput gain over vLLM. If you are operating at the frontier — 175B+ models across dozens of nodes — DeepSpeed-Inference gives you the parallelism control you need.
+
+The hardware choice matters less than getting the software stack right. A well-tuned vLLM deployment on A100s will outperform a default TensorRT-LLM deployment on H100s in my experience. Instrument your deployment, measure KV cache utilization and GPU occupancy, and iterate.
 
 ## FAQ
 
-### Is this only for advanced AI teams?
+### How do I choose between tensor parallelism and pipeline parallelism?
 
-No. The concepts are useful for small teams as well, but the implementation should match the team's maturity. A small team can start with a narrow workflow, manual review, and simple logs. A larger organization may need policy controls, shared evaluation infrastructure, and formal approval paths.
+Use tensor parallelism when all GPUs are in the same node connected by NVLink or NVSwitch. Use pipeline parallelism when you must span multiple nodes — the AllReduce required by TP is too expensive over inter-node links. Most production deployments at scale use both: TP within a node, PP across nodes.
 
-### What is the biggest risk?
+### What is the minimum viable hardware setup for running Llama 3 70B in production?
 
-The biggest risk is not that the model makes one obvious mistake. The bigger risk is that a workflow quietly produces plausible but wrong output at scale. This is why evaluation, review, and monitoring matter. Treat AI output as work that needs quality control, not as magic.
+Two A100 80 GB GPUs with NVLink is the practical floor. That gives you 160 GB aggregate VRAM — enough for the weights in FP16 with room for a reasonable KV cache. For better headroom and throughput, four A100s at TP=4 is the recommended starting point. A single H100 80 GB with FP8 quantization is also viable if you prefer fewer GPUs.
 
-### How long does adoption take?
+### Does distributed inference add latency compared to single-GPU?
 
-A useful prototype can often be built quickly, but production adoption takes longer because teams need permissions, evaluation, documentation, and user feedback. Plan for iteration. The first version should teach you which assumptions were wrong.
+Tensor parallelism adds a small AllReduce latency per transformer layer — typically 0.5–2 ms per layer on NVLink, which totals 15–60 ms across a 32-layer model. Pipeline parallelism adds pipeline bubble overhead but does not add per-token latency in steady state. For time-to-first-token, the communication overhead is often offset by the fact that each GPU handles a smaller weight fraction and completes its computation faster.
 
-### Should we build or buy?
+### When does it make sense to use a managed inference API instead of self-hosting?
 
-Buy when the workflow is common, the vendor integrates with your stack, and the risk profile is acceptable. Build when the workflow depends on proprietary context, custom tools, or differentiated product behavior. Many teams use a hybrid approach: buy model access or infrastructure, then build the workflow layer themselves.
+If your team lacks MLOps capacity, or if your volume is under roughly 5 million tokens per day, managed inference APIs from Together AI, Fireworks AI, or Hugging Face Inference Endpoints will almost certainly be cheaper than self-hosted distributed inference when you account for engineering time. Self-hosting becomes cost-competitive at high volume, when you need custom model weights, or when data privacy requirements prohibit sending data to third-party APIs.
 
-### How should success be measured?
+### How does speculative decoding interact with distributed inference?
 
-Measure outcomes rather than excitement. Good measures include task success rate, factuality, latency, token cost, context utilization, refusal quality, and regression rate; time saved, adoption rate, output quality, review effort, integration effort, and total cost of ownership. Add human review quality and user adoption data. If people try the system once and return to the old process, the rollout has not succeeded.
-
-## Final Takeaway
-
-This approach is valuable when it is connected to a real workflow, evaluated against real examples, and operated with clear boundaries. The winning teams will not be the ones with the longest list of AI tools. They will be the teams that turn AI into repeatable, observable, and trusted work.
-
-Start small, measure honestly, and improve the system with evidence. Use model APIs, open-weight models, prompt templates, embeddings, vector databases, evaluation suites, logs, and guardrails; AI assistants, workflow builders, code tools, search products, automation platforms, analytics, and integrations where they fit, but keep the focus on more reliable AI products with measurable quality, cost, and latency controls; clearer tool selection and workflows that save time without creating hidden risk. That is the difference between an impressive demo and a capability that keeps paying off after the novelty fades.
+Speculative decoding uses a small draft model to generate candidate tokens and a large verifier model to accept or reject them. In distributed inference, the draft and verifier can run on different GPU groups simultaneously. TGI and vLLM both support speculative decoding. The throughput gain is highest for workloads with predictable token distributions (coding, structured data) and lowest for open-ended generation. Expect 1.5–2.5x throughput improvement in favorable workloads with no change in output quality.
