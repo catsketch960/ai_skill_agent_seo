@@ -27,8 +27,22 @@ export default async function CategoryPage({ params }: Props) {
   if (posts.length === 0) notFound()
   const label = tag.replace(/-/g, ' ')
 
+  const collectionJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'CollectionPage',
+    name: `${label} Articles`,
+    url: `https://aiatoolshub.site/category/${tag}`,
+    description: `Browse all ${label} articles on AI Tools Hub.`,
+    publisher: { '@type': 'Organization', name: 'AI Tools Hub' },
+    numberOfItems: posts.length,
+  }
+
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionJsonLd) }}
+      />
       <div className="mb-8">
         <h1 className="text-heading text-3xl font-extrabold capitalize mb-1">{label}</h1>
         <p className="text-muted text-sm">{posts.length} article{posts.length !== 1 ? 's' : ''}</p>

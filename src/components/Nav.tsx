@@ -5,6 +5,7 @@ import { Suspense, useState } from 'react'
 import SiteSearch from '@/components/SiteSearch'
 
 const LINKS = [
+  { label: 'Blog', href: '/blog' },
   { label: 'AI Tools', href: '/category/ai-tools' },
   { label: 'AI Agents', href: '/category/ai-agents' },
   { label: 'LLMs', href: '/category/llm' },

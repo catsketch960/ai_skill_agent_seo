@@ -1,6 +1,12 @@
 import { Suspense } from 'react'
 import { getAllPosts } from '@/lib/posts'
 import SearchResults from '@/components/SearchResults'
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = {
+  title: 'Search',
+  robots: { index: false, follow: false },
+}
 
 export default function SearchPage() {
   const posts = getAllPosts()

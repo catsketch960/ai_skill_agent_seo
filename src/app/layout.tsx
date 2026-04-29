@@ -10,6 +10,7 @@ import './globals.css'
 const inter = Inter({ subsets: ['latin'], display: 'swap' })
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://aiatoolshub.site'),
   title: {
     default: 'AI Tools Hub — Reviews, Guides & Agent News',
     template: '%s | AI Tools Hub',
@@ -17,12 +18,35 @@ export const metadata: Metadata = {
   description:
     'In-depth reviews and guides on AI tools, AI agents, LLMs, DeepSeek, Claude, and GPT.',
   robots: { index: true, follow: true },
+  alternates: { canonical: './' },
+  openGraph: {
+    type: 'website',
+    siteName: 'AI Tools Hub',
+    locale: 'en_US',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'AI Tools Hub — Reviews, Guides & Agent News',
+    description:
+      'In-depth reviews and guides on AI tools, AI agents, LLMs, DeepSeek, Claude, and GPT.',
+  },
+  other: {
+    'application/rss+xml': 'https://aiatoolshub.site/feed.xml',
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const publisherId = getAdSensePublisherId()
   return (
     <html lang="en" className={inter.className}>
+      <head>
+        <link
+          rel="alternate"
+          type="application/rss+xml"
+          title="AI Tools Hub RSS Feed"
+          href="/feed.xml"
+        />
+      </head>
       <body className="antialiased">
         <Nav />
         {publisherId && (
