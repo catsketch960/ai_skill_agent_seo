@@ -3,6 +3,13 @@ import ArticleCard from '@/components/ArticleCard'
 import AdUnit from '@/components/AdUnit'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
+import {
+  collectionPageJsonLd,
+  formatTagLabel,
+  getCategoryUrl,
+  graphJsonLd,
+  SITE_NAME,
+} from '@/lib/seo'
 
 interface Props {
   params: Promise<{ tag: string }>
@@ -14,34 +21,54 @@ export async function generateStaticParams() {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { tag } = await params
-  const label = tag.replace(/-/g, ' ')
+  const label = formatTagLabel(tag)
+  const description = `Browse all ${label} articles on AI Tools Hub — in-depth reviews, guides, and news.`
+
   return {
     title: `${label} Articles`,
-    description: `Browse all ${label} articles on AI Tools Hub — in-depth reviews, guides, and news.`,
+    description,
+    alternates: { canonical: `/category/${tag}` },
+    openGraph: {
+      title: `${label} Articles | ${SITE_NAME}`,
+      description,
+      type: 'website',
+      url: getCategoryUrl(tag),
+      siteName: SITE_NAME,
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: `${label} Articles | ${SITE_NAME}`,
+      description,
+    },
   }
 }
+
+export const dynamicParams = false
 
 export default async function CategoryPage({ params }: Props) {
   const { tag } = await params
   const posts = getPostsByTag(tag)
   if (posts.length === 0) notFound()
-  const label = tag.replace(/-/g, ' ')
+  const label = formatTagLabel(tag)
+  const description = `Browse all ${label} articles on AI Tools Hub.`
 
-  const collectionJsonLd = {
-    '@context': 'https://schema.org',
-    '@type': 'CollectionPage',
-    name: `${label} Articles`,
-    url: `https://aiatoolshub.site/category/${tag}`,
-    description: `Browse all ${label} articles on AI Tools Hub.`,
-    publisher: { '@type': 'Organization', name: 'AI Tools Hub' },
-    numberOfItems: posts.length,
-  }
+  const jsonLd = graphJsonLd([
+    {
+      ...collectionPageJsonLd({
+        name: `${label} Articles`,
+        url: getCategoryUrl(tag),
+        description,
+        posts,
+      }),
+      numberOfItems: posts.length,
+    },
+  ])
 
   return (
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(collectionJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
       <div className="mb-8">
         <h1 className="text-heading text-3xl font-extrabold capitalize mb-1">{label}</h1>

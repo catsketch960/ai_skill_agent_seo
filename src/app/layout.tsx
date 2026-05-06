@@ -5,33 +5,33 @@ import { Analytics } from '@vercel/analytics/next'
 import Nav from '@/components/Nav'
 import Footer from '@/components/Footer'
 import { getAdSensePublisherId } from '@/lib/ads'
+import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from '@/lib/seo'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin'], display: 'swap' })
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://aiatoolshub.site'),
+  metadataBase: new URL(SITE_URL),
   title: {
-    default: 'AI Tools Hub — Reviews, Guides & Agent News',
-    template: '%s | AI Tools Hub',
+    default: `${SITE_NAME} — Reviews, Guides & Agent News`,
+    template: `%s | ${SITE_NAME}`,
   },
-  description:
-    'In-depth reviews and guides on AI tools, AI agents, LLMs, DeepSeek, Claude, and GPT.',
+  description: SITE_DESCRIPTION,
   robots: { index: true, follow: true },
   alternates: { canonical: './' },
   openGraph: {
     type: 'website',
-    siteName: 'AI Tools Hub',
+    url: SITE_URL,
+    siteName: SITE_NAME,
     locale: 'en_US',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'AI Tools Hub — Reviews, Guides & Agent News',
-    description:
-      'In-depth reviews and guides on AI tools, AI agents, LLMs, DeepSeek, Claude, and GPT.',
+    title: `${SITE_NAME} — Reviews, Guides & Agent News`,
+    description: SITE_DESCRIPTION,
   },
   other: {
-    'application/rss+xml': 'https://aiatoolshub.site/feed.xml',
+    'application/rss+xml': `${SITE_URL}/feed.xml`,
   },
 }
 

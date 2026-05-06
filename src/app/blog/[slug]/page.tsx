@@ -6,6 +6,16 @@ import AdUnit from '@/components/AdUnit'
 import Sidebar from '@/components/Sidebar'
 import MarkdownContent from '@/components/MarkdownContent'
 import type { Metadata } from 'next'
+import {
+  absoluteUrl,
+  formatTagLabel,
+  getCategoryUrl,
+  getPostUrl,
+  graphJsonLd,
+  organizationJsonLd,
+  SITE_NAME,
+  SITE_URL,
+} from '@/lib/seo'
 
 interface Props {
   params: Promise<{ slug: string }>
@@ -15,14 +25,40 @@ export async function generateStaticParams() {
   return getAllPosts().map(p => ({ slug: p.slug }))
 }
 
+export const dynamicParams = false
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params
   const post = getPostBySlug(slug)
   if (!post) return {}
+
+  const url = getPostUrl(post.slug)
+  const image = absoluteUrl(post.heroImage)
+  const tags = post.tags.map(formatTagLabel)
+
   return {
     title: post.title,
     description: post.description,
-    openGraph: { title: post.title, description: post.description, type: 'article', publishedTime: post.date },
+    alternates: { canonical: `/blog/${post.slug}` },
+    authors: [{ name: SITE_NAME, url: SITE_URL }],
+    keywords: tags,
+    openGraph: {
+      title: post.title,
+      description: post.description,
+      type: 'article',
+      url,
+      siteName: SITE_NAME,
+      publishedTime: post.date,
+      modifiedTime: post.date,
+      tags,
+      images: image ? [{ url: image, alt: post.title }] : undefined,
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: post.title,
+      description: post.description,
+      images: image ? [image] : undefined,
+    },
   }
 }
 
@@ -36,15 +72,58 @@ export default async function ArticlePage({ params }: Props) {
     .filter(p => p.slug !== post.slug)
     .slice(0, 3)
 
-  const jsonLd = {
-    '@context': 'https://schema.org',
-    '@type': 'Article',
-    headline: post.title,
-    description: post.description,
-    datePublished: post.date,
-    image: post.heroImage ?? undefined,
-    author: { '@type': 'Organization', name: 'AI Tools Hub' },
-  }
+  const url = getPostUrl(post.slug)
+  const image = absoluteUrl(post.heroImage)
+  const primaryTag = post.tags[0]
+  const wordCount = post.content.split(/\s+/).filter(Boolean).length
+  const breadcrumbItems = [
+    {
+      '@type': 'ListItem',
+      position: 1,
+      name: 'Home',
+      item: SITE_URL,
+    },
+    ...(primaryTag
+      ? [
+          {
+            '@type': 'ListItem',
+            position: 2,
+            name: formatTagLabel(primaryTag),
+            item: getCategoryUrl(primaryTag),
+          },
+        ]
+      : []),
+    {
+      '@type': 'ListItem',
+      position: primaryTag ? 3 : 2,
+      name: post.title,
+      item: url,
+    },
+  ]
+
+  const jsonLd = graphJsonLd([
+    {
+      '@type': 'BlogPosting',
+      '@id': `${url}#article`,
+      mainEntityOfPage: { '@type': 'WebPage', '@id': url },
+      headline: post.title,
+      description: post.description,
+      url,
+      datePublished: post.date,
+      dateModified: post.date,
+      image: image ? [image] : undefined,
+      author: { '@id': organizationJsonLd['@id'] },
+      publisher: { '@id': organizationJsonLd['@id'] },
+      articleSection: post.tags.map(formatTagLabel),
+      keywords: post.tags.map(formatTagLabel).join(', '),
+      wordCount,
+    },
+    {
+      '@type': 'BreadcrumbList',
+      '@id': `${url}#breadcrumb`,
+      itemListElement: breadcrumbItems,
+    },
+  ])
 
   const lines = post.content.split('\n')
   const mid = Math.floor(lines.length / 2)
@@ -62,7 +141,7 @@ export default async function ArticlePage({ params }: Props) {
         {post.tags[0] && (
           <>
             <Link href={`/category/${post.tags[0]}`} className="hover:text-heading capitalize">
-              {post.tags[0].replace(/-/g, ' ')}
+              {formatTagLabel(post.tags[0])}
             </Link>
             <span>/</span>
           </>

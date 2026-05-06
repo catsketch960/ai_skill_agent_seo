@@ -3,26 +3,26 @@ import HeroBanner from '@/components/HeroBanner'
 import SectionHeader from '@/components/SectionHeader'
 import AdUnit from '@/components/AdUnit'
 import ArticleSearch from '@/components/ArticleSearch'
-
-const websiteJsonLd = {
-  '@context': 'https://schema.org',
-  '@type': 'WebSite',
-  name: 'AI Tools Hub',
-  url: 'https://aiatoolshub.site',
-  description:
-    'In-depth reviews and guides on AI tools, AI agents, LLMs, DeepSeek, Claude, and GPT.',
-  publisher: { '@type': 'Organization', name: 'AI Tools Hub' },
-}
+import { collectionPageJsonLd, graphJsonLd, SITE_DESCRIPTION, SITE_URL, websiteJsonLd } from '@/lib/seo'
 
 export default function HomePage() {
   const posts = getAllPosts()
   const featured = posts[0]
+  const jsonLd = graphJsonLd([
+    websiteJsonLd(),
+    collectionPageJsonLd({
+      name: 'Latest AI tools and agents articles',
+      url: SITE_URL,
+      description: SITE_DESCRIPTION,
+      posts: posts.slice(0, 24),
+    }),
+  ])
 
   return (
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
 
       {featured && <HeroBanner post={featured} />}
