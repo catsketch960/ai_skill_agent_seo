@@ -6,7 +6,6 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: '*',
         allow: '/',
-        disallow: ['/search'],
       },
     ],
     sitemap: 'https://aiatoolshub.site/sitemap.xml',

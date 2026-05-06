@@ -1,6 +1,5 @@
 import { notFound } from 'next/navigation'
 import { getAllPosts, getPostBySlug, getPostsByTag } from '@/lib/posts'
-import Image from 'next/image'
 import Link from 'next/link'
 import TagPill from '@/components/TagPill'
 import AdUnit from '@/components/AdUnit'
